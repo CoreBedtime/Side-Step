@@ -30,6 +30,24 @@ except ImportError:
 # Preprocessed Tensor Dataset (Recommended for Training)
 # ============================================================================
 
+def _share_sample_tensors(obj: Any) -> None:
+    """Recursively move all CPU tensors in a loaded sample into shared memory.
+
+    Shared storages are passed to spawned DataLoader workers as handles to
+    the same physical pages (named file mapping on Windows, /dev/shm on
+    Linux) instead of being copied — one physical copy of the RAM cache
+    regardless of worker count.
+    """
+    if isinstance(obj, torch.Tensor):
+        obj.share_memory_()
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _share_sample_tensors(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            _share_sample_tensors(v)
+
+
 class PreprocessedTensorDataset(Dataset):
     """Dataset that loads preprocessed tensor files.
 
@@ -219,7 +237,14 @@ class PreprocessedTensorDataset(Dataset):
         if verify_checksums:
             self._verify_checksums(tensor_dir)
 
-        # RAM cache: preload all tensors to avoid disk I/O during training
+        # RAM cache: preload all tensors to avoid disk I/O during training.
+        # Cached tensors are moved into SHARED memory at build time so
+        # DataLoader workers map the same physical pages instead of paying
+        # the copy during worker spawn.  (torch's ForkingPickler would move
+        # them lazily at spawn-pickle time anyway; doing it here makes the
+        # semantics explicit and worker startup instant.)  The cache is
+        # cross-process: in-place edits such as the NaN repair in
+        # __getitem__ persist for all workers — intentional.
         self._ram_cache: Optional[List[Dict[str, Any]]] = None
         if cache_in_ram is None:
             total_bytes = sum(os.path.getsize(p) for p in self.valid_paths)
@@ -228,11 +253,11 @@ class PreprocessedTensorDataset(Dataset):
             try:
                 self._ram_cache = []
                 for p in self.valid_paths:
-                    self._ram_cache.append(
-                        torch.load(p, map_location="cpu", weights_only=True)
-                    )
+                    sample = torch.load(p, map_location="cpu", weights_only=True)
+                    _share_sample_tensors(sample)
+                    self._ram_cache.append(sample)
                 logger.info(
-                    "RAM cache enabled: %d samples loaded (%.1f MB)",
+                    "RAM cache enabled: %d samples loaded into shared memory (%.1f MB)",
                     len(self._ram_cache),
                     sum(os.path.getsize(p) for p in self.valid_paths) / (1024 * 1024),
                 )
