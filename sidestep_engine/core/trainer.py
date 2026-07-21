@@ -425,6 +425,14 @@ class FixedLoRATrainer:
                 f"[INFO] Adaptive timestep sampling enabled (ratio={_adaptive_ratio})",
                 kind="info",
             )
+            if getattr(cfg, "loss_weighting", "none") != "none":
+                yield TrainingUpdate(
+                    0, 0.0,
+                    f"[INFO] Adaptive sampling + {cfg.loss_weighting} weighting: "
+                    "applying importance correction (density ratio) so the "
+                    "weighting curve applies exactly once.",
+                    kind="info",
+                )
 
         # -- Training memory features ----------------------------------------
         cache_forced_off = force_disable_decoder_cache(self.module.model.decoder)
@@ -753,11 +761,19 @@ class FixedLoRATrainer:
 
                     # -- Target loss cruise control (LR damping) v3 -----
                     if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
+                        # Cruise on the RAW (unweighted, unbalanced) loss so
+                        # the target value means the same thing under any
+                        # loss_weighting / channel_balance / latent_noise
+                        # config.  Falls back to avg_loss (identical when no
+                        # shaping is active).
+                        _cruise_signal = self.module._step_metrics.get(
+                            "fidelity/raw_loss", avg_loss,
+                        )
                         # EMA loss smoothing
                         if _cruise_ema is None:
-                            _cruise_ema = avg_loss
+                            _cruise_ema = _cruise_signal
                         else:
-                            _cruise_ema = _cruise_beta * _cruise_ema + (1.0 - _cruise_beta) * avg_loss
+                            _cruise_ema = _cruise_beta * _cruise_ema + (1.0 - _cruise_beta) * _cruise_signal
 
                         if _cruise_ema > _target_loss:
                             # Above target: smoothstep over tight 30% margin
@@ -773,7 +789,7 @@ class FixedLoRATrainer:
 
                         # Fast-path: raw loss already below target → clamp now,
                         # don't wait for the lagging EMA to catch up
-                        if avg_loss < _target_loss:
+                        if _cruise_signal < _target_loss:
                             _scale = min(_scale, _target_loss_floor)
 
                         for pg in optimizer.param_groups:

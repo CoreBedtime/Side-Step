@@ -41,6 +41,7 @@ from sidestep_engine.vendor.oft_utils import (
 from sidestep_engine.core.configs import (
     LoRAConfigV2, LoKRConfigV2, LoHAConfigV2, OFTConfigV2, TrainingConfigV2,
 )
+from sidestep_engine.core.loss_weighting import compute_timestep_weights
 from sidestep_engine.core.timestep_sampling import (
     apply_cfg_dropout,
     sample_discrete_timesteps,
@@ -235,6 +236,17 @@ class FixedLoRAModule(nn.Module):
             self._loss_fn = "mse"
             self._channel_balance = False
             self._latent_noise_scale = 0.0
+
+        # x0_* losses carry an implicit t² timestep weighting; when an
+        # explicit SNR weighting is also active, compute_timestep_weights
+        # divides the weight by t² so the weighting applies exactly once.
+        if self._loss_fn.startswith("x0_") and self._loss_weighting != "none":
+            logger.warning(
+                "[Side-Step] %s + %s: x0 losses have an implicit t^2 timestep "
+                "weighting — compensating the %s curve by 1/t^2 so weighting "
+                "applies exactly once (velocity-equivalent objective).",
+                self._loss_fn, self._loss_weighting, self._loss_weighting,
+            )
 
         # Per-channel weights and std (set by trainer from channel_stats.json)
         self._channel_weights: Optional[torch.Tensor] = None  # [64]
@@ -449,7 +461,7 @@ class FixedLoRAModule(nn.Module):
                 device=self.device,
                 dtype=self.dtype,
             )
-        elif self._adaptive_sampler is not None:
+        elif self._adaptive_sampler is not None and not self._eval_mode:
             t, _r = self._adaptive_sampler.sample(
                 batch_size=bsz,
                 base_sampler=sample_timesteps,
@@ -569,20 +581,28 @@ class FixedLoRAModule(nn.Module):
             )
             per_sample_loss_raw = per_element.mean(dim=(-1, -2))
 
-        # Timestep weighting
-        if self._loss_weighting == "flow_snr":
-            t_f32 = t.float().clamp(min=1e-4, max=1.0 - 1e-4)
-            w = ((1.0 - t_f32) ** self._t_bias) / (t_f32 * (1.0 - t_f32))
-            w = w.clamp(max=self._snr_gamma)
-            _w_pre_norm = w.clone()  # snapshot before normalization for telemetry
-            w = w / w.mean().clamp(min=1e-8)  # normalize to preserve scale
+        # Timestep weighting (pure math in core/loss_weighting.py: handles
+        # the min_snr v-prediction formula and the x0-loss t² compensation)
+        w, _w_pre_norm = compute_timestep_weights(
+            t,
+            loss_weighting=self._loss_weighting,
+            snr_gamma=self._snr_gamma,
+            t_bias=self._t_bias,
+            x0_loss=_is_x0,
+        )
+        if w is not None:
+            # Adaptive sampling changes the timestep distribution; correct
+            # by the density ratio so the explicit weighting curve applies
+            # exactly once (importance sampling correction).
+            if self._adaptive_sampler is not None and not self._eval_mode \
+                    and self._timestep_mode != "discrete":
+                iw = self._adaptive_sampler.importance_weights(
+                    t,
+                    timestep_mu=self._timestep_mu,
+                    timestep_sigma=self._timestep_sigma,
+                ).to(device=w.device, dtype=w.dtype)
+                w = w * iw
             diffusion_loss = (w.to(per_sample_loss_raw.dtype) * per_sample_loss_raw).mean()
-        elif self._loss_weighting == "min_snr":
-            t_f32 = t.float().clamp(min=1e-4, max=1.0 - 1e-4)
-            snr = ((1.0 - t_f32) / t_f32) ** 2
-            snr = snr.clamp(max=1e6)
-            weights = torch.clamp(snr, max=self._snr_gamma) / snr.clamp(min=1e-6)
-            diffusion_loss = (weights.to(per_sample_loss_raw.dtype) * per_sample_loss_raw).mean()
         else:
             diffusion_loss = masked_sum / n_valid.clamp(min=1e-8)
 
@@ -597,16 +617,13 @@ class FixedLoRAModule(nn.Module):
             sm["fidelity/timestep_mean"] = float(t.mean())
             sm["fidelity/raw_loss"] = float(per_sample_loss_raw.mean())
             sm["fidelity/weighted_loss"] = float(diffusion_loss)
-            if self._loss_weighting == "flow_snr":
+            if _w_pre_norm is not None:
                 sm["fidelity/snr_weight_mean"] = float(_w_pre_norm.mean())
                 sm["fidelity/snr_weight_max"] = float(_w_pre_norm.max())
-                if _w_pre_norm.numel() > 1:
+                if self._loss_weighting == "flow_snr" and _w_pre_norm.numel() > 1:
                     sm["fidelity/snr_weight_spread"] = float(
                         _w_pre_norm.max() / _w_pre_norm.min().clamp(min=1e-8)
                     )
-            elif self._loss_weighting == "min_snr":
-                sm["fidelity/snr_weight_mean"] = float(weights.mean())
-                sm["fidelity/snr_weight_max"] = float(weights.max())
             if self._channel_balance and self._channel_weights is not None:
                 per_ch = per_element.mean(dim=(0, 1))  # [64]
                 sm["fidelity/ch_loss_max"] = float(per_ch.max())

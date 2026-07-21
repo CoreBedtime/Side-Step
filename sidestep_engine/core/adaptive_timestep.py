@@ -12,6 +12,7 @@ Only applies when timestep_mode='continuous'; discrete mode bypasses this.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Callable, Dict, Optional, Tuple
 
 import torch
@@ -137,6 +138,61 @@ class AdaptiveTimestepSampler:
         # Shuffle so adaptive/base samples are interleaved
         perm = torch.randperm(batch_size, device=device)
         return t[perm], r[perm]
+
+    # ------------------------------------------------------------------
+    # Importance correction
+    # ------------------------------------------------------------------
+
+    @torch.no_grad()
+    def importance_weights(
+        self,
+        timesteps: torch.Tensor,
+        timestep_mu: float = -0.4,
+        timestep_sigma: float = 1.0,
+    ) -> torch.Tensor:
+        """Per-sample importance weights ``p_base(t) / p_mix(t)``.
+
+        Adaptive sampling changes the timestep distribution, which (like
+        any importance sampling) biases the loss unless samples are
+        re-weighted by the density ratio between the base logit-normal
+        and the actual mixture that generated them.  Multiply per-sample
+        loss weights by this to keep the objective's expectation equal to
+        base-sampled training — required when an explicit SNR weighting is
+        active, so the weighting curve applies exactly once.
+
+        The mixture density is exactly computable because the adaptive
+        component is piecewise-uniform over bins:
+        ``p_adaptive(t) = probs[bin(t)] * n_bins``.
+
+        Args:
+            timesteps: Sampled timesteps ``[B]`` in (0, 1).
+            timestep_mu: Base logit-normal mean.
+            timestep_sigma: Base logit-normal sigma.
+
+        Returns:
+            CPU float32 tensor ``[B]``, normalized to mean 1 within the
+            batch (preserves overall loss scale).
+        """
+        t = timesteps.detach().float().cpu().clamp(min=1e-5, max=1.0 - 1e-5)
+
+        # Base density: logit-normal pdf.  z = logit(t)
+        z = torch.log(t) - torch.log1p(-t)
+        sigma = max(float(timestep_sigma), 1e-8)
+        p_base = (
+            torch.exp(-0.5 * ((z - float(timestep_mu)) / sigma) ** 2)
+            / (sigma * math.sqrt(2.0 * math.pi))
+            / (t * (1.0 - t))
+        )
+
+        # Adaptive density: piecewise-uniform over loss-weighted bins.
+        weights = self._bin_loss.clamp(min=1e-8)
+        probs = weights / weights.sum()
+        bins = (t * self.n_bins).long().clamp(0, self.n_bins - 1)
+        p_adaptive = probs[bins] * self.n_bins
+
+        p_mix = (1.0 - self.ratio) * p_base + self.ratio * p_adaptive
+        iw = p_base / p_mix.clamp(min=1e-12)
+        return iw / iw.mean().clamp(min=1e-8)
 
     # ------------------------------------------------------------------
     # Histogram for TensorBoard
