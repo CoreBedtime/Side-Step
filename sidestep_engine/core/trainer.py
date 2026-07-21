@@ -913,10 +913,13 @@ class FixedLoRATrainer:
                                     checkpoint_path=best_path,
                                 )
 
-                    # Periodic CUDA cache cleanup to prevent intra-epoch
-                    # memory fragmentation on consumer GPUs.
-
-                    if global_step % cfg.log_every == 0:
+                    # Periodic cache cleanup to prevent intra-epoch memory
+                    # fragmentation on consumer GPUs.  empty_cache() tears
+                    # down the caching allocator's pools (slow to rebuild),
+                    # so this runs far less often than logging — cadence is
+                    # user-tunable via empty_cache_every (0 = epoch only).
+                    _ec_every = int(getattr(cfg, "empty_cache_every", 200))
+                    if _ec_every > 0 and global_step % _ec_every == 0:
                         if torch.cuda.is_available():
                             torch.cuda.empty_cache()
                         elif torch.mps.is_available():

@@ -259,6 +259,13 @@ SCHEMA: Tuple[SchemaField, ...] = (
        cli=("--weight-qtype",), gui_id="full-weight-qtype",
        help=("optimum-quanto qtype (e.g. qfloat8, qint8); torchao keys (int8, float8) "
              "are not supported with LoRA — default: {default}")),
+    _f(name="empty_cache_every", type="int", default=200, section=S_TRAINING,
+       cli=("--empty-cache-every",), min=0,
+       help=("Release cached GPU memory every N optimizer steps to curb "
+             "fragmentation on consumer cards. Frequent flushes cost throughput "
+             "(the allocator re-allocates from scratch); raise this on cards with "
+             "headroom, lower it if you hit fragmentation OOMs. 0 = epoch "
+             "boundaries only (default: {default})")),
 
     # -- All the Levers (experimental) --------------------------------------
     _f(name="ema_decay", type="float", default=0.0, section=S_LEVERS,

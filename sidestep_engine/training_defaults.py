@@ -127,6 +127,7 @@ DEFAULT_OFT_EPS: float = _d("oft_eps")
 DEFAULT_GRADIENT_CHECKPOINTING: bool = _d("gradient_checkpointing")
 DEFAULT_GRADIENT_CHECKPOINTING_RATIO: float = _d("gradient_checkpointing_ratio")
 DEFAULT_OFFLOAD_ENCODER: bool = _d("offload_encoder")
+DEFAULT_EMPTY_CACHE_EVERY: int = _d("empty_cache_every")
 
 # ---------------------------------------------------------------------------
 # Checkpointing / output

@@ -484,7 +484,9 @@ class FixedLoRAModule(nn.Module):
             )
 
         # Record sampled timesteps for TensorBoard histogram logging.
-        if not self._eval_mode:
+        # Only when a weighting is active — that's the only case the trainer
+        # drains the buffer, and the .cpu() copy forces a GPU sync per step.
+        if not self._eval_mode and self._loss_weighting in ("min_snr", "flow_snr"):
             self._timestep_buffer.append(t.detach().cpu())
 
         # ---- Per-channel latent noise regularization ----------------------

@@ -279,6 +279,12 @@ class TrainingConfigV2(TrainingConfig):
     vram_profile: str = "auto"
     """VRAM preset: 'auto', 'comfortable', 'standard', 'tight', 'minimal'."""
 
+    empty_cache_every: int = 200
+    """Release cached GPU memory every N optimizer steps (fragmentation
+    guard for consumer cards).  Frequent flushes cost throughput because
+    the allocator has to re-allocate from scratch.  0 = epoch boundaries
+    only."""
+
     # --- Corrected training params ------------------------------------------
     cfg_ratio: float = 0.15
     """Classifier-free guidance dropout probability."""
