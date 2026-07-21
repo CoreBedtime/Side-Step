@@ -28,6 +28,11 @@ if ! command -v uv &>/dev/null; then
     exit 1
 fi
 
+# Anti-fragmentation CUDA allocator (variable-length audio batches fragment
+# the default allocator; this stops reserved VRAM from ratcheting upward).
+# Respects a user-provided value.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
 # If args provided, pass through directly (CLI mode)
 if [[ $# -gt 0 ]]; then
     uv run sidestep "$@"

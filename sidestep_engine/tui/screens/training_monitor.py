@@ -323,6 +323,9 @@ class TrainingMonitorScreen(Screen):
         worker,
     ) -> None:
         """Run the corrected FixedLoRATrainer."""
+        from sidestep_engine._compat import configure_cuda_allocator
+        configure_cuda_allocator()
+
         from sidestep_engine.core.trainer import FixedLoRATrainer
         from sidestep_engine.models.loader import load_decoder_for_training
         from sidestep_engine.models.gpu_utils import detect_gpu

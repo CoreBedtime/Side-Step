@@ -20,6 +20,11 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+REM Anti-fragmentation CUDA allocator (variable-length audio batches fragment
+REM the default allocator; this stops reserved VRAM from ratcheting upward).
+REM Respects a user-provided value.
+if not defined PYTORCH_CUDA_ALLOC_CONF set "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+
 REM If args provided, pass through directly (CLI mode)
 if not "%~1"=="" (
     uv run sidestep %*

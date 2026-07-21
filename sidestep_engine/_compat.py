@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -62,6 +63,27 @@ def _source_defines_symbol(module_name: str, symbol_name: str) -> tuple[bool, st
                 return True, ""
 
     return False, f"{symbol_name} not found in {path.name}"
+
+
+def configure_cuda_allocator() -> None:
+    """Opt into PyTorch's expandable-segments CUDA allocator.
+
+    Side-Step trains on variable-length audio latents, the worst case for
+    the default caching allocator: blocks sized for one song can't be
+    reused for the next, so reserved VRAM fragments and ratchets upward
+    over a run (it looks like a memory leak in nvidia-smi).  Expandable
+    segments (PyTorch >= 2.1) back allocations with growable virtual
+    address ranges instead of fixed cudaMalloc segments, which largely
+    eliminates that fragmentation.
+
+    Must run before the first CUDA allocation.  Respects an existing
+    user-provided ``PYTORCH_CUDA_ALLOC_CONF``.  On platforms where
+    expandable segments are unsupported, PyTorch logs a warning and
+    falls back to the default allocator — safe either way.
+    """
+    os.environ.setdefault(
+        "PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True",
+    )
 
 
 def check_compatibility() -> None:

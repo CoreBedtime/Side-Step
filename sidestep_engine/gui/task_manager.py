@@ -184,6 +184,10 @@ class TaskManager:
         if blocked:
             return blocked
 
+        # Evict finished tasks so back-to-back training runs don't
+        # accumulate Task objects (subprocess handles + queues) forever.
+        self._cleanup_old_tasks()
+
         _remember_history_root_for_output(config)
 
         # Flush stale messages from previous run so the new WS doesn't consume them
@@ -212,6 +216,9 @@ class TaskManager:
         # Force unbuffered output so log lines stream immediately
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        # Anti-fragmentation allocator (see _compat.configure_cuda_allocator);
+        # set here too in case the training subprocess env differs.
+        env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
         try:
             # Hide the console window on Windows
@@ -562,7 +569,13 @@ class TaskManager:
         # Silence TB's "No path found" INFO spam — TB uses a shared "tensorboard"
         # logger via tb_logging.get_logger(), not per-module __name__ loggers.
         logging.getLogger("tensorboard").setLevel(logging.WARNING)
-        size_guidance = {SCALARS: 0, HISTOGRAMS: 500}
+        # CAUTION: in EventAccumulator's size_guidance, 0 means UNBOUNDED
+        # retention.  This reader lives for the whole training run and
+        # reloads every 3s, so unbounded scalars are a genuine memory leak
+        # on long runs (amplified by per-layer grad_norm/* tags — one per
+        # LoRA parameter).  Bound per-tag retention; beyond the bound TB
+        # reservoir-samples older events (latest is always kept).
+        size_guidance = {SCALARS: 10_000, HISTOGRAMS: 300}
         ea = EventAccumulator(str(actual_dir), size_guidance=size_guidance)
         ea.Reload()
 
@@ -571,9 +584,12 @@ class TaskManager:
         _WANTED_HISTOGRAM_TAGS = {
             "train/timestep_distribution",
         }
-        # Track how many events we've already sent per tag
-        sent_counts: Dict[str, int] = {}
-        hist_sent_counts: Dict[str, int] = {}
+        # Track the last event STEP forwarded per tag.  Step-based rather
+        # than index-based: once a tag exceeds size_guidance the retained
+        # list is reservoir-sampled, so list indexes are not stable across
+        # Reload() calls — but training steps are monotonic.
+        sent_last_step: Dict[str, int] = {}
+        hist_sent_last_step: Dict[str, int] = {}
 
         def _enqueue(msg: dict) -> None:
             try:
@@ -608,11 +624,14 @@ class TaskManager:
                     events = ea.Scalars(tag)
                 except Exception:
                     continue
-                prev = sent_counts.get(tag, 0)
-                if len(events) <= prev:
+                prev_step = sent_last_step.get(tag)
+                new_events = [
+                    ev for ev in events
+                    if prev_step is None or ev.step > prev_step
+                ]
+                if not new_events:
                     continue
-                new_events = events[prev:]
-                sent_counts[tag] = len(events)
+                sent_last_step[tag] = max(ev.step for ev in new_events)
                 for ev in new_events:
                     _enqueue({
                         "type": "tb_scalar",
@@ -636,11 +655,14 @@ class TaskManager:
                     events = ea.Histograms(tag)
                 except Exception:
                     continue
-                prev = hist_sent_counts.get(tag, 0)
-                if len(events) <= prev:
+                prev_step = hist_sent_last_step.get(tag)
+                new_events = [
+                    ev for ev in events
+                    if prev_step is None or ev.step > prev_step
+                ]
+                if not new_events:
                     continue
-                new_events = events[prev:]
-                hist_sent_counts[tag] = len(events)
+                hist_sent_last_step[tag] = max(ev.step for ev in new_events)
                 for ev in new_events:
                     # ev.histogram_value has bucket_limit and bucket fields
                     hv = ev.histogram_value

@@ -113,6 +113,11 @@ def run_fixed(args: argparse.Namespace) -> int:
 
     Returns 0 on success, non-zero on failure.
     """
+    # Anti-fragmentation allocator config — must be set before the first
+    # CUDA allocation (variable-length batches fragment the default allocator).
+    from sidestep_engine._compat import configure_cuda_allocator
+    configure_cuda_allocator()
+
     import torch
 
     # -- UI setup -------------------------------------------------------------

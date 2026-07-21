@@ -12,6 +12,28 @@ const Training = (() => {
   let _resumeStartEpoch = 0, _resumeStartStep = 0;  // non-zero when resuming from checkpoint
   let _loss = 0, _bestLoss = Infinity, _bestEpoch = 0, _lr = 0;
   let _lossHistory = [], _lrHistory = [];
+  // Total pushes into the main-chart series (survives decimation below;
+  // used instead of array length to dedup progress vs tfevents feeds).
+  let _lossPushCount = 0, _lrPushCount = 0;
+
+  // Bound in-memory chart series so multi-day runs don't grow Electron
+  // memory (and redraw cost) forever.  When a series exceeds its cap,
+  // decimate the OLDER half (keep every 2nd point) — full-run curve shape
+  // survives at reduced resolution, recent data stays exact.
+  const MAX_SCALAR_POINTS = 20000;
+  const MAX_HIST_ENTRIES = 300;
+  function _trimSeries(arr, cap) {
+    if (!arr || arr.length <= cap) return;
+    const half = Math.floor(arr.length / 2);
+    const kept = [];
+    for (let i = 0; i < half; i += 2) kept.push(arr[i]);
+    arr.splice(0, half, ...kept);
+  }
+  function _pushScalar(tag, point) {
+    if (!_tbScalars[tag]) _tbScalars[tag] = [];
+    _tbScalars[tag].push(point);
+    _trimSeries(_tbScalars[tag], MAX_SCALAR_POINTS);
+  }
   let _epochLossHistory = [], _epochLrHistory = [];
   let _epochLossAccum = 0, _epochStepCount = 0;
   let _startTime = 0, _epochStartTime = 0, _lastEpochDuration = 0;
@@ -1412,25 +1434,28 @@ const Training = (() => {
       const _progressTags = new Set(['train/loss', 'train/lr', 'train/epoch_loss']);
       if (_progressTags.has(tag) && _tbScalars[tag] && _tbScalars[tag].length > 0) {
         // Progress already populated this tag; only update main chart if ahead
-        if (tag === 'train/loss' && msg.step > _lossHistory.length) {
-          _lossHistory.push(msg.value); _loss = msg.value;
+        if (tag === 'train/loss' && msg.step > _lossPushCount) {
+          _lossHistory.push(msg.value); _lossPushCount++; _loss = msg.value;
+          _trimSeries(_lossHistory, MAX_SCALAR_POINTS);
         }
-        if (tag === 'train/lr' && msg.step > _lrHistory.length) {
-          _lrHistory.push(msg.value); _lr = msg.value;
+        if (tag === 'train/lr' && msg.step > _lrPushCount) {
+          _lrHistory.push(msg.value); _lrPushCount++; _lr = msg.value;
+          _trimSeries(_lrHistory, MAX_SCALAR_POINTS);
         }
         return;
       }
       if (!_tbScalars[tag]) {
-        _tbScalars[tag] = [];
         console.log('[tb_scalar] New tag discovered:', tag);
       }
-      _tbScalars[tag].push({ step: msg.step, value: msg.value, wall_time: msg.wall_time });
+      _pushScalar(tag, { step: msg.step, value: msg.value, wall_time: msg.wall_time });
       // train/loss and train/lr also update the main chart
-      if (tag === 'train/loss' && msg.step > _lossHistory.length) {
-        _lossHistory.push(msg.value); _loss = msg.value;
+      if (tag === 'train/loss' && msg.step > _lossPushCount) {
+        _lossHistory.push(msg.value); _lossPushCount++; _loss = msg.value;
+        _trimSeries(_lossHistory, MAX_SCALAR_POINTS);
       }
-      if (tag === 'train/lr' && msg.step > _lrHistory.length) {
-        _lrHistory.push(msg.value); _lr = msg.value;
+      if (tag === 'train/lr' && msg.step > _lrPushCount) {
+        _lrHistory.push(msg.value); _lrPushCount++; _lr = msg.value;
+        _trimSeries(_lrHistory, MAX_SCALAR_POINTS);
       }
       _renderMiniCharts();
       _updateLossChart();
@@ -1445,6 +1470,7 @@ const Training = (() => {
         console.log('[tb_histogram] New tag discovered:', tag);
       }
       _tbHistograms[tag].push({ step: msg.step, wall_time: msg.wall_time, bins: msg.bins });
+      _trimSeries(_tbHistograms[tag], MAX_HIST_ENTRIES);
       _renderMiniCharts();
       return;
     }
@@ -1471,41 +1497,37 @@ const Training = (() => {
         _bestEpoch = msg.best_epoch ?? _bestEpoch;
         _stepInEpoch = _stepsPerEpoch > 0 ? _step % _stepsPerEpoch : _step;
 
-        _lossHistory.push(_loss);
-        _lrHistory.push(_lr);
+        _lossHistory.push(_loss); _lossPushCount++;
+        _lrHistory.push(_lr); _lrPushCount++;
+        _trimSeries(_lossHistory, MAX_SCALAR_POINTS);
+        _trimSeries(_lrHistory, MAX_SCALAR_POINTS);
         _epochLossAccum += _loss;
         _epochStepCount++;
 
         // Also feed into _tbScalars so mini-charts work immediately
         // (the tfevents reader may lag or not yet be running)
         const wt = Date.now() / 1000;
-        if (!_tbScalars['train/loss']) _tbScalars['train/loss'] = [];
-        _tbScalars['train/loss'].push({ step: _step, value: _loss, wall_time: wt });
-        if (!_tbScalars['train/lr']) _tbScalars['train/lr'] = [];
-        _tbScalars['train/lr'].push({ step: _step, value: _lr, wall_time: wt });
+        _pushScalar('train/loss', { step: _step, value: _loss, wall_time: wt });
+        _pushScalar('train/lr', { step: _step, value: _lr, wall_time: wt });
 
         // Cruise control scalars (piped through progress writer)
         if (msg.target_loss_scale != null) {
-          if (!_tbScalars['target_loss_scale']) _tbScalars['target_loss_scale'] = [];
-          _tbScalars['target_loss_scale'].push({ step: _step, value: msg.target_loss_scale, wall_time: wt });
+          _pushScalar('target_loss_scale', { step: _step, value: msg.target_loss_scale, wall_time: wt });
         }
         if (msg.target_loss_ema != null) {
-          if (!_tbScalars['target_loss_ema']) _tbScalars['target_loss_ema'] = [];
-          _tbScalars['target_loss_ema'].push({ step: _step, value: msg.target_loss_ema, wall_time: wt });
+          _pushScalar('target_loss_ema', { step: _step, value: msg.target_loss_ema, wall_time: wt });
         }
 
         // Fidelity metrics (piped through progress writer as dict)
         if (msg.fidelity && typeof msg.fidelity === 'object') {
           for (const [ftag, fval] of Object.entries(msg.fidelity)) {
             if (fval == null) continue;
-            if (!_tbScalars[ftag]) _tbScalars[ftag] = [];
-            _tbScalars[ftag].push({ step: _step, value: fval, wall_time: wt });
+            _pushScalar(ftag, { step: _step, value: fval, wall_time: wt });
           }
         }
         // EMA active status
         if (msg.ema_active != null) {
-          if (!_tbScalars['ema/active']) _tbScalars['ema/active'] = [];
-          _tbScalars['ema/active'].push({ step: _step, value: msg.ema_active ? 1.0 : 0.0, wall_time: wt });
+          _pushScalar('ema/active', { step: _step, value: msg.ema_active ? 1.0 : 0.0, wall_time: wt });
         }
 
         // Conditioning info: per-sample genre/caption selection
@@ -1770,6 +1792,7 @@ const Training = (() => {
     _resumeStartEpoch = 0; _resumeStartStep = 0;
     _loss = 0; _bestLoss = Infinity; _bestEpoch = 0; _lr = 0;
     _lossHistory = []; _lrHistory = [];
+    _lossPushCount = 0; _lrPushCount = 0;
     _epochLossHistory = []; _epochLrHistory = [];
     _epochLossAccum = 0; _epochStepCount = 0;
     _viewXMin = null; _viewXMax = null; _userZoomed = false;
@@ -2018,6 +2041,7 @@ const Training = (() => {
   function demoMiniCharts() {
     _tbScalars = {}; _tbHistograms = {};
     _lossHistory = []; _lrHistory = [];
+    _lossPushCount = 0; _lrPushCount = 0;
     _epochLossHistory = []; _epochLrHistory = [];
     _finalized = false; _running = true;
     const miniContainer = $('monitor-mini-charts');
