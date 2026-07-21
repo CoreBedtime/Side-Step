@@ -106,6 +106,7 @@ from sidestep_engine.training_defaults import (
     DEFAULT_LR_SCALE_MLP,
     DEFAULT_WEIGHT_QUANTIZE,
     DEFAULT_WEIGHT_QTYPE,
+    resolve_optimizer_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,10 @@ def build_training_config(
         gpu_info.device = user_device
     if user_precision and user_precision != "auto":
         gpu_info.precision = user_precision
+    optimizer_type = resolve_optimizer_type(
+        _get(p, "optimizer_type", DEFAULT_OPTIMIZER_TYPE),
+        gpu_info.device_type,
+    )
 
     # -- Adapter config ------------------------------------------------------
     adapter_type = _get(p, "adapter_type", "lora")
@@ -366,7 +371,7 @@ def build_training_config(
         prefetch_factor=prefetch_factor,
         persistent_workers=persistent_workers,
         adapter_type=adapter_type,
-        optimizer_type=_get(p, "optimizer_type", DEFAULT_OPTIMIZER_TYPE),
+        optimizer_type=optimizer_type,
         scheduler_type=sched_type,
         scheduler_formula=formula,
         gradient_checkpointing=gc_enabled,

@@ -7,6 +7,7 @@ Extracted from ``train_steps.py`` to meet the module LOC policy.
 from __future__ import annotations
 
 from sidestep_engine.training_defaults import (
+    DEFAULT_OPTIMIZER_TYPE,
     DEFAULT_WEIGHT_QUANTIZE,
     DEFAULT_WEIGHT_QTYPE,
 )
@@ -57,7 +58,8 @@ def step_advanced_optimizer(a: dict) -> None:
     a["optimizer_type"] = menu(
         "Which optimizer to use?",
         [
-            ("adamw", "AdamW (default, reliable)"),
+            ("auto", "Auto (CUDA: AdamW 8-bit; other devices: AdamW)"),
+            ("adamw", "AdamW (standard, reliable)"),
             ("adamw8bit", "AdamW 8-bit (saves ~30% optimizer VRAM, needs bitsandbytes)"),
             ("adafactor", "Adafactor (minimal state memory)"),
             ("prodigy", "Prodigy (auto-tunes LR -- start around 0.1, needs prodigyopt)"),
@@ -261,7 +263,7 @@ def step_advanced_vram(a: dict) -> None:
     adapter_type = a.get("adapter_type", "lora")
     rank = _get_adapter_rank(a)
     target_mlp = a.get("target_mlp", False)
-    optimizer_type = a.get("optimizer_type", "adamw")
+    optimizer_type = a.get("optimizer_type", DEFAULT_OPTIMIZER_TYPE)
     offload = a.get("offload_encoder", True)
     num_layers = _detect_num_layers(a)
 

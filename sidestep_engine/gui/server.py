@@ -123,7 +123,7 @@ class VRAMEstimateRequest(BaseModel):
     rank: int = 64
     gradient_checkpointing_ratio: float = 1.0
     adapter_type: str = "lora"
-    optimizer_type: str = "adamw8bit"
+    optimizer_type: str = "auto"
     target_mlp: bool = True
     offload_encoder: bool = True
 
@@ -621,6 +621,10 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
         from sidestep_engine.gui.gpu_monitor import get_gpu_snapshot
 
         chunk_s = body.chunk_duration if body.chunk_duration is not None else None
+        gpu = get_gpu_snapshot()
+        optimizer_type = body.optimizer_type
+        if optimizer_type == "auto":
+            optimizer_type = "adamw8bit" if gpu.get("available") else "adamw"
 
         peak, breakdown = estimate_peak_vram_mb(
             checkpointing_ratio=body.gradient_checkpointing_ratio,
@@ -632,9 +636,8 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
             adapter_type=body.adapter_type,
             rank=body.rank,
             target_mlp=body.target_mlp,
-            optimizer_type=body.optimizer_type,
+            optimizer_type=optimizer_type,
         )
-        gpu = get_gpu_snapshot()
         gpu_total = gpu.get("vram_total_mb", 0)
         gpu_free = gpu.get("vram_free_mb", 0)
         gpu_used = gpu.get("vram_used_mb", 0)

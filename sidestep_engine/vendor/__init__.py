@@ -1,52 +1,56 @@
 """Vendored ACE-Step modules for standalone Side-Step operation.
 
-These files are snapshots of ``acestep.training.*`` modules bundled so that
-Side-Step's *corrected* (fixed) training loop and preprocessing pipeline can
-run without a full ACE-Step installation.
-
-Vanilla training mode still requires base ACE-Step (``acestep.training.trainer``).
+The package intentionally exposes legacy re-export names lazily.  Importing a
+single lightweight submodule such as ``sidestep_engine.vendor.configs`` should
+not import torch, torchaudio, or other training-time dependencies.
 """
 
-# -- Configs ----------------------------------------------------------------
-from sidestep_engine.vendor.configs import (  # noqa: F401
-    LoRAConfig,
-    LoKRConfig,
-    TrainingConfig,
-)
+from __future__ import annotations
 
-# -- LoRA utilities ---------------------------------------------------------
-from sidestep_engine.vendor.lora_utils import (  # noqa: F401
-    check_peft_available,
-    inject_lora_into_dit,
-    load_lora_weights,
-    load_training_checkpoint,
-    save_lora_weights,
-    save_training_checkpoint,
-)
+from importlib import import_module
+from typing import Any
 
-# -- LoKR utilities ---------------------------------------------------------
-from sidestep_engine.vendor.lokr_utils import (  # noqa: F401
-    check_lycoris_available,
-    inject_lokr_into_dit,
-    load_lokr_weights,
-    save_lokr_training_checkpoint,
-    save_lokr_weights,
-)
 
-# -- Data module ------------------------------------------------------------
-from sidestep_engine.vendor.data_module import (  # noqa: F401
-    PreprocessedDataModule,
-)
+_LAZY_EXPORTS = {
+    # Configs
+    "LoRAConfig": "configs",
+    "LoKRConfig": "configs",
+    "TrainingConfig": "configs",
+    # LoRA utilities
+    "check_peft_available": "lora_utils",
+    "inject_lora_into_dit": "lora_utils",
+    "load_lora_weights": "lora_utils",
+    "load_training_checkpoint": "lora_utils",
+    "save_lora_weights": "lora_utils",
+    "save_training_checkpoint": "lora_utils",
+    # LoKR utilities
+    "check_lycoris_available": "lokr_utils",
+    "inject_lokr_into_dit": "lokr_utils",
+    "load_lokr_weights": "lokr_utils",
+    "save_lokr_training_checkpoint": "lokr_utils",
+    "save_lokr_weights": "lokr_utils",
+    # Data module
+    "PreprocessedDataModule": "data_module",
+    # Preprocessing utilities
+    "load_audio_stereo": "preprocess_audio",
+    "encode_lyrics": "preprocess_lyrics",
+    "run_encoder": "preprocess_encoder",
+    "build_context_latents": "preprocess_context",
+    "encode_text": "preprocess_text",
+    # Constants
+    "DEFAULT_DIT_INSTRUCTION": "constants",
+    "SFT_GEN_PROMPT": "constants",
+}
 
-# -- Preprocessing utilities ------------------------------------------------
-from sidestep_engine.vendor.preprocess_audio import load_audio_stereo  # noqa: F401
-from sidestep_engine.vendor.preprocess_lyrics import encode_lyrics  # noqa: F401
-from sidestep_engine.vendor.preprocess_encoder import run_encoder  # noqa: F401
-from sidestep_engine.vendor.preprocess_context import build_context_latents  # noqa: F401
-from sidestep_engine.vendor.preprocess_text import encode_text  # noqa: F401
+__all__ = sorted(_LAZY_EXPORTS)
 
-# -- Constants --------------------------------------------------------------
-from sidestep_engine.vendor.constants import (  # noqa: F401
-    DEFAULT_DIT_INSTRUCTION,
-    SFT_GEN_PROMPT,
-)
+
+def __getattr__(name: str) -> Any:
+    """Load legacy re-exported symbols on first access."""
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(f"{__name__}.{module_name}")
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

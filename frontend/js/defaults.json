@@ -57,7 +57,7 @@
   "full-max-latent-length":   "0",
   "full-chunk-decay-every":   "10",
 
-  "full-optimizer":           "adamw8bit",
+  "full-optimizer":           "auto",
   "full-scheduler":           "cosine",
   "full-scheduler-formula":   "",
 

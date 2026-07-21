@@ -441,7 +441,16 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
                          help=f"Maximum optimizer steps; 0 = use epochs only (default: {DEFAULT_MAX_STEPS})")
     g_train.add_argument("--shift", type=float, default=None, help=argparse.SUPPRESS)
     g_train.add_argument("--num-inference-steps", type=int, default=None, help=argparse.SUPPRESS)
-    g_train.add_argument("--optimizer-type", type=str, default=DEFAULT_OPTIMIZER_TYPE, choices=["adamw", "adamw8bit", "adafactor", "prodigy"], help=f"Optimizer (default: {DEFAULT_OPTIMIZER_TYPE})")
+    g_train.add_argument(
+        "--optimizer-type",
+        type=str,
+        default=DEFAULT_OPTIMIZER_TYPE,
+        choices=["auto", "adamw", "adamw8bit", "adafactor", "prodigy"],
+        help=(
+            "Optimizer (default: auto; resolves to adamw8bit on CUDA, "
+            "adamw otherwise)"
+        ),
+    )
     g_train.add_argument("--scheduler-type", type=str, default=DEFAULT_SCHEDULER_TYPE, choices=["cosine", "cosine_restarts", "linear", "constant", "constant_with_warmup", "custom"], help=f"LR scheduler (default: {DEFAULT_SCHEDULER_TYPE})")
     g_train.add_argument("--scheduler-formula", type=str, default="", help="Custom LR formula (Python math expression). Only used with --scheduler-type custom")
     g_train.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True, help="Recompute activations to save VRAM (~40-60%% less, ~10-30%% slower). On by default; use --no-gradient-checkpointing to disable")

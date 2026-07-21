@@ -94,7 +94,11 @@ def load_settings() -> Optional[Dict[str, Any]]:
     """
     global _cache
     p = settings_path()
-    if not p.is_file():
+    try:
+        if not p.is_file():
+            return None
+    except OSError as exc:
+        logger.warning("Failed to stat settings: %s", exc)
         return None
 
     try:

@@ -20,7 +20,6 @@ config dicts produced by the frontend.
 
 from __future__ import annotations
 
-import torch
 import os
 import sys
 
@@ -43,7 +42,26 @@ DEFAULT_DATASET_REPEATS: int = 1
 # Optimizer / scheduler
 # ---------------------------------------------------------------------------
 
-DEFAULT_OPTIMIZER_TYPE: str = "adamw8bit" if torch.cuda.is_available() else "adamw"
+DEFAULT_OPTIMIZER_TYPE: str = "auto"
+"""Resolved at training-config build time to avoid importing torch at startup."""
+
+
+def resolve_optimizer_type(
+    optimizer_type: str | None,
+    device_type: str | None = None,
+) -> str:
+    """Resolve the public ``auto`` optimizer default for the selected device.
+
+    ``torch`` import/CUDA probing is intentionally kept out of this module so
+    CLI help, the wizard menu, and GUI defaults stay fast.  Call this after
+    device detection has already happened for an actual training run.
+    """
+    value = str(optimizer_type or DEFAULT_OPTIMIZER_TYPE).lower().strip()
+    if value != "auto":
+        return value
+    return "adamw8bit" if str(device_type or "").lower() == "cuda" else "adamw"
+
+
 DEFAULT_SCHEDULER_TYPE: str = "cosine"
 DEFAULT_SCHEDULER_FORMULA: str = ""
 
@@ -477,4 +495,3 @@ def get_gui_defaults() -> dict:
     out["settings-exported-loras-dir"] = f".{_sep}exported_loras"
 
     return out
-

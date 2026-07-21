@@ -294,7 +294,7 @@
               <div class="review-table__group">Logging</div>
               <div class="review-table__row"><span class="review-table__key">Save every</span><span class="review-table__val" id="ez-rev-save-every">50 epochs</span></div>
               <div class="review-table__row"><span class="review-table__key">Save best</span><span class="review-table__val" id="ez-rev-save-best">yes</span></div>
-              <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="ez-rev-optimizer">adamw8bit</span></div>
+              <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="ez-rev-optimizer">auto</span></div>
             </div>
           </div>
 
@@ -1032,12 +1032,14 @@
                 <div class="form-group">
                   <label class="form-group__label">Optimizer <span class="help-icon" data-help="help-full-optim">?</span></label>
                   <div id="help-full-optim" class="help-panel">
+                    <p><strong>Auto:</strong> Uses AdamW 8-bit on CUDA and AdamW on other devices.</p>
                     <p><strong>AdamW:</strong> The standard. Reliable, well-understood. Uses ~2× model memory for optimizer states.</p>
                     <p><strong>AdamW 8-bit:</strong> Same algorithm but stores states in 8-bit precision. Saves ~30% VRAM with negligible quality impact.</p>
                     <p><strong>AdaFactor:</strong> Uses almost no extra memory by computing running statistics on-the-fly. Good for extreme VRAM constraints.</p>
                     <p><strong>Prodigy:</strong> Automatically tunes the learning rate during training. Set LR to ~0.1 and let it find the right value. Experimental but promising.</p>
                   </div>
                   <select class="select vram-input" id="full-optimizer">
+                    <option value="auto">Auto</option>
                     <option value="adamw">AdamW (standard)</option>
                     <option value="adamw8bit">AdamW 8-bit (saves ~30%)</option>
                     <option value="adafactor">AdaFactor (minimal state)</option>
@@ -3135,6 +3137,7 @@
             <div class="form-group" style="flex: 1;">
               <label class="form-group__label">Optimizer</label>
               <select class="select" id="resume-optimizer">
+                <option value="auto">Auto</option>
                 <option value="adamw">AdamW</option>
                 <option value="adamw8bit">AdamW 8-bit</option>
                 <option value="adafactor">AdaFactor</option>

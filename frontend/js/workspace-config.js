@@ -285,7 +285,7 @@ const WorkspaceConfig = (() => {
       "ez-rev-offload": () => _c("full-offload-encoder") ? "yes" : "no",
       "ez-rev-weight-q": () => _c("full-weight-quantize") ? _v("full-weight-qtype", "qfloat8") : "off",
       "ez-rev-save-every": () => _v("full-save-every","50") + " epochs",
-      "ez-rev-save-best": () => _c("full-save-best") ? "yes" : "no", "ez-rev-optimizer": () => _v("full-optimizer","adamw8bit"),
+      "ez-rev-save-best": () => _c("full-save-best") ? "yes" : "no", "ez-rev-optimizer": () => _v("full-optimizer","auto"),
     };
     Object.entries(map).forEach(([id, fn]) => {
       const el = $(id);
@@ -467,7 +467,7 @@ const WorkspaceConfig = (() => {
       chunk_duration: _v("full-chunk-duration", "0"),
       max_latent_length: _v("full-max-latent-length", "0"),
       chunk_decay_every: _v("full-chunk-decay-every", "10"),
-      optimizer_type: _v("full-optimizer", "adamw8bit"), scheduler: _v("full-scheduler", "cosine"),
+      optimizer_type: _v("full-optimizer", "auto"), scheduler: _v("full-scheduler", "cosine"),
       scheduler_formula: _v("full-scheduler-formula", ""),
       device: _v("full-device", "auto"), precision: _v("full-precision", "auto"),
       save_every: _v("full-save-every", "50"), log_every: _v("full-log-every", "10"),

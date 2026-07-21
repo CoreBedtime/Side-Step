@@ -36,7 +36,7 @@ const VRAM = (() => {
       offload_encoder: $('full-offload-encoder')?.checked ?? true,
       gradient_checkpointing: !isNaN(ratio) && ratio > 0 ? 'on' : 'off',
       gradient_checkpointing_ratio: !isNaN(ratio) ? ratio : 1.0,
-      optimizer_type: $('full-optimizer')?.value || 'adamw',
+      optimizer_type: $('full-optimizer')?.value || 'auto',
       chunk_duration: cropMode === 'seconds' ? chunkDuration : 0,
       max_latent_length: cropMode === 'latent' ? maxLatLen : 0,
       target_mlp: $('full-target-mlp')?.checked ?? true,

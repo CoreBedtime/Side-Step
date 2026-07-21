@@ -9,8 +9,11 @@ This module checks that critical vendored modules are importable.
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import logging
 import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,37 @@ SIDESTEP_VERSION = "1.1.2-beta"
 # Compatibility check
 # ---------------------------------------------------------------------------
 
+def _source_defines_symbol(module_name: str, symbol_name: str) -> tuple[bool, str]:
+    """Return whether a module source file defines a symbol, without importing it."""
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or not spec.origin:
+        return False, "module not found"
+
+    path = Path(spec.origin)
+    if not path.is_file():
+        return False, f"source file not found: {path}"
+
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError) as exc:
+        return False, f"could not inspect source: {exc}"
+
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == symbol_name:
+                return True, ""
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == symbol_name:
+                    return True, ""
+        if isinstance(node, ast.AnnAssign):
+            target = node.target
+            if isinstance(target, ast.Name) and target.id == symbol_name:
+                return True, ""
+
+    return False, f"{symbol_name} not found in {path.name}"
+
+
 def check_compatibility() -> None:
     """Verify that critical symbols exist.
 
@@ -39,26 +73,15 @@ def check_compatibility() -> None:
     warnings: list[str] = []
 
     # 1. Vendored modules (required for fixed training)
-    try:
-        from sidestep_engine.vendor.data_module import PreprocessedDataModule  # noqa: F401
-    except Exception as e:
-        warnings.append(
-            f"Cannot import vendored data_module.PreprocessedDataModule: {e}"
-        )
-
-    try:
-        from sidestep_engine.vendor.lora_utils import inject_lora_into_dit  # noqa: F401
-    except Exception as e:
-        warnings.append(
-            f"Cannot import vendored lora_utils.inject_lora_into_dit: {e}"
-        )
-
-    try:
-        from sidestep_engine.vendor.configs import TrainingConfig  # noqa: F401
-    except Exception as e:
-        warnings.append(
-            f"Cannot import vendored configs.TrainingConfig: {e}"
-        )
+    checks = (
+        ("sidestep_engine.vendor.data_module", "PreprocessedDataModule"),
+        ("sidestep_engine.vendor.lora_utils", "inject_lora_into_dit"),
+        ("sidestep_engine.vendor.configs", "TrainingConfig"),
+    )
+    for module_name, symbol_name in checks:
+        ok, reason = _source_defines_symbol(module_name, symbol_name)
+        if not ok:
+            warnings.append(f"Cannot find vendored {module_name}.{symbol_name}: {reason}")
 
     if warnings:
         msg = (
