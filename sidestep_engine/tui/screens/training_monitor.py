@@ -344,6 +344,7 @@ class TrainingMonitorScreen(Screen):
             precision=gpu.precision,
             weight_quantize=getattr(training_config, "weight_quantize", False),
             weight_qtype=getattr(training_config, "weight_qtype", "qfloat8"),
+            offload_encoder=getattr(training_config, "offload_encoder", False),
         )
 
         # Patch resolved device/precision back into the config

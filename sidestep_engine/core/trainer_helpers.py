@@ -146,10 +146,14 @@ def force_disable_decoder_cache(decoder: nn.Module) -> bool:
 
 
 def offload_non_decoder(model: nn.Module) -> int:
-    """Move encoder/VAE/non-decoder submodules to CPU. Returns count offloaded."""
+    """Move encoder/VAE/non-decoder submodules to CPU. Returns count offloaded.
+
+    No-op (but still counted) for components the loader already streamed
+    to CPU at load time via its device_map.
+    """
+    from sidestep_engine.core.constants import NON_DECODER_COMPONENTS
     count = 0
-    for name in ("music_encoder", "lyric_encoder", "timbre_encoder",
-                  "condition_projection", "vae", "text_encoder", "attention_pooler"):
+    for name in NON_DECODER_COMPONENTS:
         sub = getattr(model, name, None)
         if sub is not None and isinstance(sub, nn.Module):
             sub.to("cpu")

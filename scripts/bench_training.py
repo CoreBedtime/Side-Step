@@ -106,6 +106,7 @@ def main() -> int:
         device=train_cfg.device, precision=train_cfg.precision,
         weight_quantize=train_cfg.weight_quantize,
         weight_qtype=train_cfg.weight_qtype,
+        offload_encoder=train_cfg.offload_encoder,
     )
     load_s = time.perf_counter() - t_load0
 

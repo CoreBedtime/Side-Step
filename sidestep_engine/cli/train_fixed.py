@@ -146,6 +146,10 @@ def run_fixed(args: argparse.Namespace) -> int:
 
     # -- Matmul precision (matches handler.initialize_service behaviour) ------
     torch.set_float32_matmul_precision("medium")
+    # TF32 for cuDNN ops (convs); matmul precision above covers matmuls.
+    # Free speedup on Ampere+; harmless elsewhere.  cudnn.benchmark stays
+    # OFF on purpose: variable-length batches would re-benchmark constantly.
+    torch.backends.cudnn.allow_tf32 = True
 
     # -- Build V2 config objects from CLI args --------------------------------
     adapter_cfg, train_cfg = build_configs(args)
@@ -273,6 +277,7 @@ def run_fixed(args: argparse.Namespace) -> int:
                 precision=train_cfg.precision,
                 weight_quantize=getattr(train_cfg, "weight_quantize", False),
                 weight_qtype=getattr(train_cfg, "weight_qtype", "qfloat8"),
+                offload_encoder=getattr(train_cfg, "offload_encoder", False),
             )
             attention_backend = str(getattr(model, "_side_step_attn_backend", "unknown"))
             if session_cfg_path is not None:
