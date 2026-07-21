@@ -1,48 +1,61 @@
-"""
-Canonical training defaults shared across entrypoints.
+"""Canonical training defaults shared across entrypoints.
 
-**This module is the single source of truth for every default that
-appears in more than one interface (CLI, Wizard, GUI, config_factory).**
+As of the schema refactor, the **single source of truth is
+``sidestep_engine.core.schema``** — one ``SchemaField`` record per training
+option (default, type, choices, range, help, CLI flags, GUI id).  This
+module keeps the historical public API (``DEFAULT_*`` constants,
+``TRAINING_DEFAULTS``, ``GUI_FIELD_MAP``, ``get_gui_defaults``) but derives
+every value from the schema so nothing can drift.
 
-When a default changes, update it here and all consumers will pick it up.
-The ``TRAINING_DEFAULTS`` dict at the bottom aggregates every constant
-for easy consumption by the ``/api/defaults`` endpoint and review table.
+To change a default, edit ``core/schema.py`` — CLI, Wizard, GUI, and
+``/api/defaults`` all pick it up automatically.
 
 GUI field-ID mapping
 ~~~~~~~~~~~~~~~~~~~~
 The GUI uses HTML element IDs (``full-lr``, ``full-batch``, …) that
-differ from backend parameter names.  ``GUI_FIELD_MAP`` translates
-backend keys → GUI field IDs so the server can emit defaults keyed
-the way the frontend expects.  ``GUI_KEY_MAP`` is the reverse
-(GUI/JSON config key → backend parameter name) used when *reading*
-config dicts produced by the frontend.
+differ from backend parameter names.  ``GUI_FIELD_MAP`` (derived from the
+schema's ``gui_id`` metadata) translates backend keys → GUI field IDs so
+the server can emit defaults keyed the way the frontend expects.
+``GUI_KEY_MAP`` is the reverse (GUI/JSON config key → backend parameter
+name) used when *reading* config dicts produced by the frontend.
 """
 
 from __future__ import annotations
 
 import os
-import sys
+
+from sidestep_engine.core.schema import (
+    SCHEMA_BY_NAME as _SCHEMA,
+    defaults_dict as _schema_defaults_dict,
+    gui_field_map as _schema_gui_field_map,
+)
+
+
+def _d(name: str):
+    """Default value for schema field *name* (fails loudly on typos)."""
+    return _SCHEMA[name].default
+
 
 # ---------------------------------------------------------------------------
 # Training hyper-parameters
 # ---------------------------------------------------------------------------
 
-DEFAULT_LEARNING_RATE: float = 3e-4
-DEFAULT_BATCH_SIZE: int = 1
-DEFAULT_GRADIENT_ACCUMULATION: int = 4
-DEFAULT_EPOCHS: int = 1000
-DEFAULT_WARMUP_STEPS: int = 100
-DEFAULT_WEIGHT_DECAY: float = 0.01
-DEFAULT_MAX_GRAD_NORM: float = 1.0
-DEFAULT_SEED: int = 42
-DEFAULT_MAX_STEPS: int = 0
-DEFAULT_DATASET_REPEATS: int = 1
+DEFAULT_LEARNING_RATE: float = _d("learning_rate")
+DEFAULT_BATCH_SIZE: int = _d("batch_size")
+DEFAULT_GRADIENT_ACCUMULATION: int = _d("gradient_accumulation")
+DEFAULT_EPOCHS: int = _d("epochs")
+DEFAULT_WARMUP_STEPS: int = _d("warmup_steps")
+DEFAULT_WEIGHT_DECAY: float = _d("weight_decay")
+DEFAULT_MAX_GRAD_NORM: float = _d("max_grad_norm")
+DEFAULT_SEED: int = _d("seed")
+DEFAULT_MAX_STEPS: int = _d("max_steps")
+DEFAULT_DATASET_REPEATS: int = _d("dataset_repeats")
 
 # ---------------------------------------------------------------------------
 # Optimizer / scheduler
 # ---------------------------------------------------------------------------
 
-DEFAULT_OPTIMIZER_TYPE: str = "auto"
+DEFAULT_OPTIMIZER_TYPE: str = _d("optimizer_type")
 """Resolved at training-config build time to avoid importing torch at startup."""
 
 
@@ -62,251 +75,155 @@ def resolve_optimizer_type(
     return "adamw8bit" if str(device_type or "").lower() == "cuda" else "adamw"
 
 
-DEFAULT_SCHEDULER_TYPE: str = "cosine"
-DEFAULT_SCHEDULER_FORMULA: str = ""
+DEFAULT_SCHEDULER_TYPE: str = _d("scheduler_type")
+DEFAULT_SCHEDULER_FORMULA: str = _d("scheduler_formula")
 
 # ---------------------------------------------------------------------------
 # LoRA defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_RANK: int = 64
-DEFAULT_ALPHA: int = 128
-DEFAULT_DROPOUT: float = 0.1
-DEFAULT_TARGET_MODULES: list = ["q_proj", "k_proj", "v_proj", "o_proj"]
-DEFAULT_ATTENTION_TYPE: str = "both"
-DEFAULT_TARGET_MLP: bool = True
-DEFAULT_BIAS: str = "none"
+DEFAULT_RANK: int = _d("rank")
+DEFAULT_ALPHA: int = _d("alpha")
+DEFAULT_DROPOUT: float = _d("dropout")
+DEFAULT_TARGET_MODULES: list = list(_d("target_modules"))
+DEFAULT_ATTENTION_TYPE: str = _d("attention_type")
+DEFAULT_TARGET_MLP: bool = _d("target_mlp")
+DEFAULT_BIAS: str = _d("bias")
 
 # ---------------------------------------------------------------------------
 # LoKR defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_LOKR_LINEAR_DIM: int = 64
-DEFAULT_LOKR_LINEAR_ALPHA: int = 128
-DEFAULT_LOKR_FACTOR: int = -1
-DEFAULT_LOKR_DECOMPOSE_BOTH: bool = False
-DEFAULT_LOKR_USE_TUCKER: bool = False
-DEFAULT_LOKR_USE_SCALAR: bool = False
-DEFAULT_LOKR_WEIGHT_DECOMPOSE: bool = False
+DEFAULT_LOKR_LINEAR_DIM: int = _d("lokr_linear_dim")
+DEFAULT_LOKR_LINEAR_ALPHA: int = _d("lokr_linear_alpha")
+DEFAULT_LOKR_FACTOR: int = _d("lokr_factor")
+DEFAULT_LOKR_DECOMPOSE_BOTH: bool = _d("lokr_decompose_both")
+DEFAULT_LOKR_USE_TUCKER: bool = _d("lokr_use_tucker")
+DEFAULT_LOKR_USE_SCALAR: bool = _d("lokr_use_scalar")
+DEFAULT_LOKR_WEIGHT_DECOMPOSE: bool = _d("lokr_weight_decompose")
 
 # ---------------------------------------------------------------------------
 # LoHA defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_LOHA_LINEAR_DIM: int = 64
-DEFAULT_LOHA_LINEAR_ALPHA: int = 128
-DEFAULT_LOHA_FACTOR: int = -1
-DEFAULT_LOHA_USE_TUCKER: bool = False
-DEFAULT_LOHA_USE_SCALAR: bool = False
+DEFAULT_LOHA_LINEAR_DIM: int = _d("loha_linear_dim")
+DEFAULT_LOHA_LINEAR_ALPHA: int = _d("loha_linear_alpha")
+DEFAULT_LOHA_FACTOR: int = _d("loha_factor")
+DEFAULT_LOHA_USE_TUCKER: bool = _d("loha_use_tucker")
+DEFAULT_LOHA_USE_SCALAR: bool = _d("loha_use_scalar")
 
 # ---------------------------------------------------------------------------
 # OFT defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_OFT_BLOCK_SIZE: int = 64
-DEFAULT_OFT_COFT: bool = False
-DEFAULT_OFT_EPS: float = 6e-5
+DEFAULT_OFT_BLOCK_SIZE: int = _d("oft_block_size")
+DEFAULT_OFT_COFT: bool = _d("oft_coft")
+DEFAULT_OFT_EPS: float = _d("oft_eps")
 
 # ---------------------------------------------------------------------------
 # VRAM / performance
 # ---------------------------------------------------------------------------
 
-DEFAULT_GRADIENT_CHECKPOINTING: bool = True
-DEFAULT_GRADIENT_CHECKPOINTING_RATIO: float = 1.0
-DEFAULT_OFFLOAD_ENCODER: bool = True
+DEFAULT_GRADIENT_CHECKPOINTING: bool = _d("gradient_checkpointing")
+DEFAULT_GRADIENT_CHECKPOINTING_RATIO: float = _d("gradient_checkpointing_ratio")
+DEFAULT_OFFLOAD_ENCODER: bool = _d("offload_encoder")
 
 # ---------------------------------------------------------------------------
 # Checkpointing / output
 # ---------------------------------------------------------------------------
 
-DEFAULT_SAVE_EVERY: int = 50
-DEFAULT_SAVE_BEST: bool = True
-DEFAULT_SAVE_BEST_AFTER: int = 200
-DEFAULT_EARLY_STOP_PATIENCE: int = 0
-DEFAULT_STRICT_RESUME: bool = True
-DEFAULT_TARGET_LOSS: float = 0.0
-DEFAULT_TARGET_LOSS_FLOOR: float = 0.01
-DEFAULT_TARGET_LOSS_WARMUP: int = 50
-DEFAULT_TARGET_LOSS_SMOOTHING: float = 0.98
+DEFAULT_SAVE_EVERY: int = _d("save_every")
+DEFAULT_SAVE_BEST: bool = _d("save_best")
+DEFAULT_SAVE_BEST_AFTER: int = _d("save_best_after")
+DEFAULT_EARLY_STOP_PATIENCE: int = _d("early_stop_patience")
+DEFAULT_STRICT_RESUME: bool = _d("strict_resume")
+DEFAULT_TARGET_LOSS: float = _d("target_loss")
+DEFAULT_TARGET_LOSS_FLOOR: float = _d("target_loss_floor")
+DEFAULT_TARGET_LOSS_WARMUP: int = _d("target_loss_warmup")
+DEFAULT_TARGET_LOSS_SMOOTHING: float = _d("target_loss_smoothing")
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 
-DEFAULT_LOG_EVERY: int = 10
-DEFAULT_LOG_HEAVY_EVERY: int = 50
+DEFAULT_LOG_EVERY: int = _d("log_every")
+DEFAULT_LOG_HEAVY_EVERY: int = _d("log_heavy_every")
 
 # ---------------------------------------------------------------------------
 # CFG / loss
 # ---------------------------------------------------------------------------
 
-DEFAULT_CFG_RATIO: float = 0.15
-DEFAULT_LOSS_WEIGHTING: str = "flow_snr"
-DEFAULT_SNR_GAMMA: float = 5.0
-DEFAULT_LOSS_FN: str = "mse"
-DEFAULT_HUBER_DELTA: float = 1.0
-DEFAULT_CHANNEL_BALANCE: bool = True
-DEFAULT_DYNAMIC_CHANNEL_BALANCE: bool = False
-DEFAULT_VAE_CHANNEL_PRIOR: bool = True
-DEFAULT_LATENT_NOISE: float = 0.02
-DEFAULT_T_BIAS: float = 0.5
-DEFAULT_LEGACY_LOSS: bool = False
-DEFAULT_TIMESTEP_MODE: str = "continuous"
+DEFAULT_CFG_RATIO: float = _d("cfg_ratio")
+DEFAULT_LOSS_WEIGHTING: str = _d("loss_weighting")
+DEFAULT_SNR_GAMMA: float = _d("snr_gamma")
+DEFAULT_LOSS_FN: str = _d("loss_fn")
+DEFAULT_HUBER_DELTA: float = _d("huber_delta")
+DEFAULT_CHANNEL_BALANCE: bool = _d("channel_balance")
+DEFAULT_DYNAMIC_CHANNEL_BALANCE: bool = _d("dynamic_channel_balance")
+DEFAULT_VAE_CHANNEL_PRIOR: bool = _d("vae_channel_prior")
+DEFAULT_LATENT_NOISE: float = _d("latent_noise")
+DEFAULT_T_BIAS: float = _d("t_bias")
+DEFAULT_LEGACY_LOSS: bool = _d("legacy_loss")
+DEFAULT_TIMESTEP_MODE: str = _d("timestep_mode")
 
 # ---------------------------------------------------------------------------
 # Chunking / cropping
 # ---------------------------------------------------------------------------
 
-DEFAULT_MAX_LATENT_LENGTH: int = 0
-DEFAULT_CHUNK_DECAY_EVERY: int = 10
+DEFAULT_MAX_LATENT_LENGTH: int = _d("max_latent_length")
+DEFAULT_CHUNK_DECAY_EVERY: int = _d("chunk_decay_every")
 
 # ---------------------------------------------------------------------------
 # DataLoader (platform-dependent)
 # ---------------------------------------------------------------------------
 
-DEFAULT_NUM_WORKERS: int = 2 if sys.platform == "win32" else 4
-DEFAULT_PREFETCH_FACTOR: int = 2
-DEFAULT_PIN_MEMORY: bool = True
-DEFAULT_PERSISTENT_WORKERS: bool = True
+DEFAULT_NUM_WORKERS: int = _d("num_workers")
+DEFAULT_PREFETCH_FACTOR: int = _d("prefetch_factor")
+DEFAULT_PIN_MEMORY: bool = _d("pin_memory")
+DEFAULT_PERSISTENT_WORKERS: bool = _d("persistent_workers")
 
 # ---------------------------------------------------------------------------
 # "All the Levers" (experimental enhancements)
 # ---------------------------------------------------------------------------
 
-DEFAULT_EMA_DECAY: float = 0.0
-DEFAULT_EMA_START_STEP: int = 2000
-DEFAULT_VAL_SPLIT: float = 0.0
-DEFAULT_ADAPTIVE_TIMESTEP_RATIO: float = 0.0
-DEFAULT_WARMUP_START_FACTOR: float = 0.1
-DEFAULT_COSINE_ETA_MIN_RATIO: float = 0.01
-DEFAULT_COSINE_RESTARTS_COUNT: int = 4
-DEFAULT_SAVE_BEST_EVERY_N_STEPS: int = 0
+DEFAULT_EMA_DECAY: float = _d("ema_decay")
+DEFAULT_EMA_START_STEP: int = _d("ema_start_step")
+DEFAULT_VAL_SPLIT: float = _d("val_split")
+DEFAULT_ADAPTIVE_TIMESTEP_RATIO: float = _d("adaptive_timestep_ratio")
+DEFAULT_WARMUP_START_FACTOR: float = _d("warmup_start_factor")
+DEFAULT_COSINE_ETA_MIN_RATIO: float = _d("cosine_eta_min_ratio")
+DEFAULT_COSINE_RESTARTS_COUNT: int = _d("cosine_restarts_count")
+DEFAULT_SAVE_BEST_EVERY_N_STEPS: int = _d("save_best_every_n_steps")
 
-DEFAULT_LR_SCALE_SELF_ATTN: float = 1.0
-DEFAULT_LR_SCALE_CROSS_ATTN: float = 1.0
-DEFAULT_LR_SCALE_MLP: float = 1.0
+DEFAULT_LR_SCALE_SELF_ATTN: float = _d("lr_scale_self_attn")
+DEFAULT_LR_SCALE_CROSS_ATTN: float = _d("lr_scale_cross_attn")
+DEFAULT_LR_SCALE_MLP: float = _d("lr_scale_mlp")
 
 # ---------------------------------------------------------------------------
 # Model / device
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL_VARIANT: str = "base"
-DEFAULT_ADAPTER_TYPE: str = "lora"
-DEFAULT_DEVICE: str = "auto"
-DEFAULT_PRECISION: str = "auto"
+DEFAULT_MODEL_VARIANT: str = _d("model_variant")
+DEFAULT_ADAPTER_TYPE: str = _d("adapter_type")
+DEFAULT_DEVICE: str = _d("device")
+DEFAULT_PRECISION: str = _d("precision")
 
 # Optimum-quanto (optional extra ``quantize``)
-DEFAULT_WEIGHT_QUANTIZE: bool = False
-DEFAULT_WEIGHT_QTYPE: str = "qfloat8"
+DEFAULT_WEIGHT_QUANTIZE: bool = _d("weight_quantize")
+DEFAULT_WEIGHT_QTYPE: str = _d("weight_qtype")
 
 # ---------------------------------------------------------------------------
 # Aggregate dict — backend parameter names → default values.
-# Used by /api/defaults endpoint and review_summary _DEFAULTS.
+# Derived from the schema (aggregate fields only).  Used by /api/defaults
+# and review_summary _DEFAULTS.
 # ---------------------------------------------------------------------------
 
-TRAINING_DEFAULTS: dict = {
-    # Model
-    "model_variant": DEFAULT_MODEL_VARIANT,
-    "adapter_type": DEFAULT_ADAPTER_TYPE,
-    "device": DEFAULT_DEVICE,
-    "precision": DEFAULT_PRECISION,
-    "weight_quantize": DEFAULT_WEIGHT_QUANTIZE,
-    "weight_qtype": DEFAULT_WEIGHT_QTYPE,
-    # Training
-    "learning_rate": DEFAULT_LEARNING_RATE,
-    "batch_size": DEFAULT_BATCH_SIZE,
-    "gradient_accumulation": DEFAULT_GRADIENT_ACCUMULATION,
-    "epochs": DEFAULT_EPOCHS,
-    "warmup_steps": DEFAULT_WARMUP_STEPS,
-    "weight_decay": DEFAULT_WEIGHT_DECAY,
-    "max_grad_norm": DEFAULT_MAX_GRAD_NORM,
-    "seed": DEFAULT_SEED,
-    "max_steps": DEFAULT_MAX_STEPS,
-    "dataset_repeats": DEFAULT_DATASET_REPEATS,
-    # Optimizer / scheduler
-    "optimizer_type": DEFAULT_OPTIMIZER_TYPE,
-    "scheduler_type": DEFAULT_SCHEDULER_TYPE,
-    "scheduler_formula": DEFAULT_SCHEDULER_FORMULA,
-    # LoRA
-    "rank": DEFAULT_RANK,
-    "alpha": DEFAULT_ALPHA,
-    "dropout": DEFAULT_DROPOUT,
-    "attention_type": DEFAULT_ATTENTION_TYPE,
-    "target_mlp": DEFAULT_TARGET_MLP,
-    "bias": DEFAULT_BIAS,
-    # LoKR
-    "lokr_linear_dim": DEFAULT_LOKR_LINEAR_DIM,
-    "lokr_linear_alpha": DEFAULT_LOKR_LINEAR_ALPHA,
-    "lokr_factor": DEFAULT_LOKR_FACTOR,
-    "lokr_decompose_both": DEFAULT_LOKR_DECOMPOSE_BOTH,
-    "lokr_use_tucker": DEFAULT_LOKR_USE_TUCKER,
-    "lokr_use_scalar": DEFAULT_LOKR_USE_SCALAR,
-    "lokr_weight_decompose": DEFAULT_LOKR_WEIGHT_DECOMPOSE,
-    # LoHA
-    "loha_linear_dim": DEFAULT_LOHA_LINEAR_DIM,
-    "loha_linear_alpha": DEFAULT_LOHA_LINEAR_ALPHA,
-    "loha_factor": DEFAULT_LOHA_FACTOR,
-    "loha_use_tucker": DEFAULT_LOHA_USE_TUCKER,
-    "loha_use_scalar": DEFAULT_LOHA_USE_SCALAR,
-    # OFT
-    "oft_block_size": DEFAULT_OFT_BLOCK_SIZE,
-    "oft_coft": DEFAULT_OFT_COFT,
-    "oft_eps": DEFAULT_OFT_EPS,
-    # VRAM
-    "gradient_checkpointing": DEFAULT_GRADIENT_CHECKPOINTING,
-    "gradient_checkpointing_ratio": DEFAULT_GRADIENT_CHECKPOINTING_RATIO,
-    "offload_encoder": DEFAULT_OFFLOAD_ENCODER,
-    # Checkpointing
-    "save_every": DEFAULT_SAVE_EVERY,
-    "save_best": DEFAULT_SAVE_BEST,
-    "save_best_after": DEFAULT_SAVE_BEST_AFTER,
-    "early_stop_patience": DEFAULT_EARLY_STOP_PATIENCE,
-    "strict_resume": DEFAULT_STRICT_RESUME,
-    "target_loss": DEFAULT_TARGET_LOSS,
-    "target_loss_floor": DEFAULT_TARGET_LOSS_FLOOR,
-    "target_loss_warmup": DEFAULT_TARGET_LOSS_WARMUP,
-    "target_loss_smoothing": DEFAULT_TARGET_LOSS_SMOOTHING,
-    # Logging
-    "log_every": DEFAULT_LOG_EVERY,
-    "log_heavy_every": DEFAULT_LOG_HEAVY_EVERY,
-    # CFG / loss
-    "cfg_ratio": DEFAULT_CFG_RATIO,
-    "loss_weighting": DEFAULT_LOSS_WEIGHTING,
-    "snr_gamma": DEFAULT_SNR_GAMMA,
-    "loss_fn": DEFAULT_LOSS_FN,
-    "huber_delta": DEFAULT_HUBER_DELTA,
-    "channel_balance": DEFAULT_CHANNEL_BALANCE,
-    "vae_channel_prior": DEFAULT_VAE_CHANNEL_PRIOR,
-    "latent_noise": DEFAULT_LATENT_NOISE,
-    "t_bias": DEFAULT_T_BIAS,
-    "legacy_loss": DEFAULT_LEGACY_LOSS,
-    "timestep_mode": DEFAULT_TIMESTEP_MODE,
-    # Chunking
-    "max_latent_length": DEFAULT_MAX_LATENT_LENGTH,
-    "chunk_decay_every": DEFAULT_CHUNK_DECAY_EVERY,
-    # DataLoader
-    "num_workers": DEFAULT_NUM_WORKERS,
-    "prefetch_factor": DEFAULT_PREFETCH_FACTOR,
-    "pin_memory": DEFAULT_PIN_MEMORY,
-    "persistent_workers": DEFAULT_PERSISTENT_WORKERS,
-    # All the Levers
-    "ema_decay": DEFAULT_EMA_DECAY,
-    "ema_start_step": DEFAULT_EMA_START_STEP,
-    "val_split": DEFAULT_VAL_SPLIT,
-    "adaptive_timestep_ratio": DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
-    "warmup_start_factor": DEFAULT_WARMUP_START_FACTOR,
-    "cosine_eta_min_ratio": DEFAULT_COSINE_ETA_MIN_RATIO,
-    "cosine_restarts_count": DEFAULT_COSINE_RESTARTS_COUNT,
-    "save_best_every_n_steps": DEFAULT_SAVE_BEST_EVERY_N_STEPS,
-    # Per-layer-type LR scales
-    "lr_scale_self_attn": DEFAULT_LR_SCALE_SELF_ATTN,
-    "lr_scale_cross_attn": DEFAULT_LR_SCALE_CROSS_ATTN,
-    "lr_scale_mlp": DEFAULT_LR_SCALE_MLP,
-}
+TRAINING_DEFAULTS: dict = _schema_defaults_dict()
 
 # ---------------------------------------------------------------------------
 # GUI key mapping — frontend config key → backend parameter name.
 # Keys not listed here are assumed to match the backend name exactly.
+# (Hand-maintained: these are frontend aliases, not schema fields.)
 # ---------------------------------------------------------------------------
 
 GUI_KEY_MAP: dict = {
@@ -328,103 +245,24 @@ GUI_KEY_MAP: dict = {
 }
 
 # ---------------------------------------------------------------------------
-# Backend parameter name → GUI field ID.
+# Backend parameter name → GUI field ID (derived from schema gui_id).
 # Used by /api/defaults to emit defaults keyed the way the frontend expects.
 # ---------------------------------------------------------------------------
 
-GUI_FIELD_MAP: dict = {
-    "model_variant": "full-model-variant",
-    "adapter_type": "full-adapter-type",
-    "rank": "full-rank",
-    "alpha": "full-alpha",
-    "dropout": "full-dropout",
-    "lokr_linear_dim": "full-lokr-dim",
-    "lokr_linear_alpha": "full-lokr-alpha",
-    "lokr_factor": "full-lokr-factor",
-    "loha_linear_dim": "full-loha-dim",
-    "loha_linear_alpha": "full-loha-alpha",
-    "loha_factor": "full-loha-factor",
-    "oft_block_size": "full-oft-block-size",
-    "oft_eps": "full-oft-eps",
-    "attention_type": "full-attention-type",
-    "target_mlp": "full-target-mlp",
-    "bias": "full-bias",
-    "learning_rate": "full-lr",
-    "batch_size": "full-batch",
-    "gradient_accumulation": "full-grad-accum",
-    "epochs": "full-epochs",
-    "warmup_steps": "full-warmup",
-    "max_steps": "full-max-steps",
-    "cfg_ratio": "full-cfg-dropout",
-    "loss_weighting": "full-loss-weighting",
-    "snr_gamma": "full-snr-gamma",
-    "loss_fn": "full-loss-fn",
-    "huber_delta": "full-huber-delta",
-    "channel_balance": "full-channel-balance",
-    "vae_channel_prior": "full-vae-channel-prior",
-    "latent_noise": "full-latent-noise",
-    "t_bias": "full-t-bias",
-    "legacy_loss": "full-legacy-loss",
-    "offload_encoder": "full-offload-encoder",
-    "weight_quantize": "full-weight-quantize",
-    "weight_qtype": "full-weight-qtype",
-    "gradient_checkpointing_ratio": "full-grad-ckpt-ratio",
-    "chunk_decay_every": "full-chunk-decay-every",
-    "optimizer_type": "full-optimizer",
-    "scheduler_type": "full-scheduler",
-    "scheduler_formula": "full-scheduler-formula",
-    "max_latent_length": "full-max-latent-length",
-    "device": "full-device",
-    "precision": "full-precision",
-    "save_every": "full-save-every",
-    "log_every": "full-log-every",
-    "log_heavy_every": "full-log-heavy-every",
-    "save_best": "full-save-best",
-    "save_best_after": "full-save-best-after",
-    "early_stop_patience": "full-early-stop",
-    "target_loss": "full-target-loss",
-    "target_loss_floor": "full-target-loss-floor",
-    "target_loss_warmup": "full-target-loss-warmup",
-    "target_loss_smoothing": "full-target-loss-smoothing",
-    "strict_resume": "full-strict-resume",
-    "weight_decay": "full-weight-decay",
-    "max_grad_norm": "full-max-grad-norm",
-    "seed": "full-seed",
-    "dataset_repeats": "full-dataset-repeats",
-    "warmup_start_factor": "full-warmup-start-factor",
-    "cosine_eta_min_ratio": "full-cosine-eta-min",
-    "cosine_restarts_count": "full-cosine-restarts",
-    "ema_decay": "full-ema-decay",
-    "ema_start_step": "full-ema-start-step",
-    "val_split": "full-val-split",
-    "timestep_mode": "full-timestep-mode",
-    "adaptive_timestep_ratio": "full-adaptive-timestep",
-    "save_best_every_n_steps": "full-save-best-every-n-steps",
-    "lr_scale_self_attn": "full-lr-scale-self-attn",
-    "lr_scale_cross_attn": "full-lr-scale-cross-attn",
-    "lr_scale_mlp": "full-lr-scale-mlp",
-    "num_workers": "full-num-workers",
-    "prefetch_factor": "full-prefetch-factor",
-    "pin_memory": "full-pin-memory",
-    "persistent_workers": "full-persistent-workers",
-}
+GUI_FIELD_MAP: dict = _schema_gui_field_map()
 
 
 # ---------------------------------------------------------------------------
-# Float formatting hints — values that defaults.json expresses in
-# scientific notation so the GUI shows e.g. "3e-4" instead of "0.0003".
+# Float formatting hints — derived from schema ``gui_format`` so the GUI
+# shows e.g. "3e-4" instead of "0.0003" and "1.0" instead of "1".
 # ---------------------------------------------------------------------------
 
 _SCI_NOTATION_FIELDS: set = {
-    "full-lr",      # 3e-4
-    "full-oft-eps", # 6e-5
+    f.gui_id for f in _SCHEMA.values() if f.gui_id and f.gui_format == "sci"
 }
 
-# Fields where we always want a trailing decimal (e.g. "1.0" not "1")
 _FORCE_DECIMAL_FIELDS: set = {
-    "full-snr-gamma",
-    "full-grad-ckpt-ratio",
-    "full-max-grad-norm",
+    f.gui_id for f in _SCHEMA.values() if f.gui_id and f.gui_format == "decimal1"
 }
 
 
@@ -469,7 +307,7 @@ def get_gui_defaults() -> dict:
     out["full-inference-steps"] = "50"
 
     # -- UI presentation defaults (no backend equivalent) ------------------
-    _projs = "q_proj k_proj v_proj o_proj"
+    _projs = " ".join(DEFAULT_TARGET_MODULES)
     out["full-projections"] = _projs
     out["full-self-projections"] = _projs
     out["full-cross-projections"] = _projs
@@ -478,8 +316,8 @@ def get_gui_defaults() -> dict:
     out["full-crop-mode"] = "full"
 
     # -- Timestep defaults (from model config, not training params) --------
-    out["full-timestep-mu"] = "-0.4"
-    out["full-timestep-sigma"] = "1.0"
+    out["full-timestep-mu"] = str(_d("timestep_mu"))      # "-0.4"
+    out["full-timestep-sigma"] = str(_d("timestep_sigma"))  # "1.0"
     out["full-timestep-mode"] = DEFAULT_TIMESTEP_MODE
 
     # -- Empty-string defaults ---------------------------------------------

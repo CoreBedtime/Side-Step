@@ -1,85 +1,91 @@
 """
 Argparse construction for Side-Step CLI.
 
-Contains ``build_root_parser`` and all ``_add_*`` argument-group helpers,
-plus shared constants (``_DEFAULT_NUM_WORKERS``, ``VARIANT_DIR_MAP``).
+Contains ``build_root_parser`` and all ``_add_*`` argument-group helpers.
+
+Training-related arguments are **generated from the canonical schema**
+(``sidestep_engine.core.schema``): flags, defaults, choices, and help all
+come from one ``SchemaField`` record per option.  To add a training option,
+add it to the schema — it appears here automatically.  Non-training
+subcommands (captions, tags, export, …) remain hand-written.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 
-from sidestep_engine.training_defaults import (
-    DEFAULT_ALPHA,
-    DEFAULT_ATTENTION_TYPE,
-    DEFAULT_BATCH_SIZE,
-    DEFAULT_BIAS,
-    DEFAULT_CFG_RATIO,
-    DEFAULT_CHUNK_DECAY_EVERY,
-    DEFAULT_MAX_LATENT_LENGTH,
-    DEFAULT_COSINE_ETA_MIN_RATIO,
-    DEFAULT_COSINE_RESTARTS_COUNT,
-    DEFAULT_DATASET_REPEATS,
-    DEFAULT_DROPOUT,
-    DEFAULT_EARLY_STOP_PATIENCE,
-    DEFAULT_EMA_DECAY,
-    DEFAULT_EMA_START_STEP,
-    DEFAULT_TARGET_LOSS,
-    DEFAULT_TARGET_LOSS_FLOOR,
-    DEFAULT_TARGET_LOSS_WARMUP,
-    DEFAULT_TARGET_LOSS_SMOOTHING,
-    DEFAULT_EPOCHS,
-    DEFAULT_GRADIENT_ACCUMULATION,
-    DEFAULT_GRADIENT_CHECKPOINTING_RATIO,
-    DEFAULT_LEARNING_RATE,
-    DEFAULT_LOG_EVERY,
-    DEFAULT_LOG_HEAVY_EVERY,
-    DEFAULT_LOHA_FACTOR,
-    DEFAULT_LOHA_LINEAR_ALPHA,
-    DEFAULT_LOHA_LINEAR_DIM,
-    DEFAULT_LOKR_DECOMPOSE_BOTH,
-    DEFAULT_LOKR_FACTOR,
-    DEFAULT_LOKR_LINEAR_ALPHA,
-    DEFAULT_LOKR_LINEAR_DIM,
-    DEFAULT_LOSS_WEIGHTING,
-    DEFAULT_MAX_GRAD_NORM,
-    DEFAULT_MAX_STEPS,
-    DEFAULT_MODEL_VARIANT,
-    DEFAULT_NUM_WORKERS as _DEFAULT_NUM_WORKERS,
-    DEFAULT_OFT_BLOCK_SIZE,
-    DEFAULT_OFT_EPS,
-    DEFAULT_OPTIMIZER_TYPE,
-    DEFAULT_PREFETCH_FACTOR,
-    DEFAULT_RANK,
-    DEFAULT_SAVE_BEST_AFTER,
-    DEFAULT_SAVE_BEST_EVERY_N_STEPS,
-    DEFAULT_SAVE_EVERY,
-    DEFAULT_SCHEDULER_TYPE,
-    DEFAULT_SEED,
-    DEFAULT_SNR_GAMMA,
-    DEFAULT_LOSS_FN,
-    DEFAULT_HUBER_DELTA,
-    DEFAULT_CHANNEL_BALANCE,
-    DEFAULT_DYNAMIC_CHANNEL_BALANCE,
-    DEFAULT_VAE_CHANNEL_PRIOR,
-    DEFAULT_LATENT_NOISE,
-    DEFAULT_T_BIAS,
-    DEFAULT_LEGACY_LOSS,
-    DEFAULT_WARMUP_START_FACTOR,
-    DEFAULT_WARMUP_STEPS,
-    DEFAULT_WEIGHT_DECAY,
-    DEFAULT_WEIGHT_QUANTIZE,
-    DEFAULT_WEIGHT_QTYPE,
-    DEFAULT_TIMESTEP_MODE,
-    DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
-    DEFAULT_VAL_SPLIT,
-    DEFAULT_LR_SCALE_SELF_ATTN,
-    DEFAULT_LR_SCALE_CROSS_ATTN,
-    DEFAULT_LR_SCALE_MLP,
+from sidestep_engine.core.schema import (
+    S_ADAPTER,
+    S_ADVANCED,
+    S_CKPT,
+    S_DATA,
+    S_DEVICE,
+    S_LEVERS,
+    S_LOG,
+    S_LOHA,
+    S_LOKR,
+    S_LORA,
+    S_MODEL,
+    S_OFT,
+    S_TRAINING,
+    SchemaField,
+    fields_for_section,
+    render_help,
 )
 
 from sidestep_engine.core.constants import VARIANT_DIR_MAP
+
+# Backward-compat alias (re-exported by cli/common.py).
+from sidestep_engine.training_defaults import (  # noqa: F401
+    DEFAULT_NUM_WORKERS as _DEFAULT_NUM_WORKERS,
+)
+
+
+# ===========================================================================
+# Schema -> argparse rendering
+# ===========================================================================
+
+_PY_TYPES = {"int": int, "float": float, "str": str}
+
+
+def _add_schema_argument(group: argparse._ArgumentGroup, f: SchemaField) -> None:
+    """Add one schema field to an argparse group, preserving the historical
+    hand-written surface (flags, dest, type, default, choices, help)."""
+    assert f.cli, f"field {f.name} has no CLI flags"
+    kwargs: dict = {"dest": f.name}
+    if f.cli_action == "bool_optional":
+        kwargs["action"] = argparse.BooleanOptionalAction
+        kwargs["default"] = f.default
+    elif f.cli_action == "store_true":
+        kwargs["action"] = "store_true"
+        kwargs["default"] = f.default
+    else:
+        if f.type in _PY_TYPES:
+            kwargs["type"] = _PY_TYPES[f.type]
+        if f.cli_default_none:
+            kwargs["default"] = None
+        elif isinstance(f.default, tuple):
+            kwargs["default"] = list(f.default)
+        else:
+            kwargs["default"] = f.default
+        if f.choices is not None:
+            kwargs["choices"] = list(f.choices)
+        if f.cli_nargs:
+            kwargs["nargs"] = f.cli_nargs
+        if f.cli_metavar:
+            kwargs["metavar"] = f.cli_metavar
+    kwargs["help"] = argparse.SUPPRESS if f.cli_suppressed else render_help(f)
+    group.add_argument(*f.cli, **kwargs)
+
+
+def _add_schema_section(
+    parser: argparse.ArgumentParser, section: str,
+) -> argparse._ArgumentGroup:
+    """Create an argument group titled *section* and fill it from the schema."""
+    group = parser.add_argument_group(section)
+    for f in fields_for_section(section):
+        _add_schema_argument(group, f)
+    return group
 
 
 # ===========================================================================
@@ -339,237 +345,37 @@ def build_root_parser() -> argparse.ArgumentParser:
 # ===========================================================================
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
-    """Add --model (was --model-variant) and --checkpoint-dir."""
-    g = parser.add_argument_group("Model / paths")
-    g.add_argument(
-        "--checkpoint-dir", "-c",
-        type=str,
-        default=None,
-        help="Path to checkpoints root directory (auto-resolves from settings if omitted)",
-    )
-    g.add_argument(
-        "--model", "-M", "--model-variant",
-        type=str,
-        default=DEFAULT_MODEL_VARIANT,
-        dest="model_variant",
-        metavar="MODEL",
-        help=(
-            f"Model variant or subfolder name (default: {DEFAULT_MODEL_VARIANT}). "
-            "Official ACE-Step 1.5: base, sft, turbo. "
-            "Official XL: xl-base, xl-sft, xl-turbo (see VARIANT_DIR_MAP in core/constants). "
-            "Custom fine-tunes: exact subdirectory name under checkpoint-dir."
-        ),
-    )
+    """Add --model (was --model-variant) and --checkpoint-dir (schema-driven)."""
+    _add_schema_section(parser, S_MODEL)
 
 
 def _add_device_args(parser: argparse.ArgumentParser) -> None:
-    """Add --device and --precision."""
-    g = parser.add_argument_group("Device / platform")
-    g.add_argument(
-        "--device",
-        type=str,
-        default="auto",
-        help="Device: auto, cuda, cuda:0, mps, xpu, cpu (default: auto)",
-    )
-    g.add_argument(
-        "--precision",
-        type=str,
-        default="auto",
-        choices=["auto", "bf16", "fp16", "fp32"],
-        help="Precision: auto, bf16, fp16, fp32 (default: auto)",
-    )
+    """Add --device and --precision (schema-driven)."""
+    _add_schema_section(parser, S_DEVICE)
 
 
 def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
-    """Add arguments shared by training subcommands."""
+    """Add arguments shared by training subcommands (schema-driven)."""
     _add_model_args(parser)
     _add_device_args(parser)
 
-    # -- Data ----------------------------------------------------------------
-    g_data = parser.add_argument_group("Data")
-    g_data.add_argument(
-        "--dataset-dir", "-d",
-        type=str,
-        default=None,
-        help="Directory containing preprocessed .pt files",
-    )
-    g_data.add_argument(
-        "--num-workers",
-        type=int,
-        default=_DEFAULT_NUM_WORKERS,
-        help=f"DataLoader workers (default: {_DEFAULT_NUM_WORKERS}; 0 on Windows)",
-    )
-    g_data.add_argument(
-        "--pin-memory",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Pin memory for GPU transfer (default: True)",
-    )
-    g_data.add_argument(
-        "--prefetch-factor",
-        type=int,
-        default=DEFAULT_PREFETCH_FACTOR,
-        help=f"DataLoader prefetch factor (default: {DEFAULT_PREFETCH_FACTOR}; 0 on Windows)",
-    )
-    g_data.add_argument(
-        "--persistent-workers",
-        action=argparse.BooleanOptionalAction,
-        default=_DEFAULT_NUM_WORKERS > 0,
-        help="Keep workers alive between epochs (default: True; False on Windows)",
-    )
-
-    # -- Training hyperparams ------------------------------------------------
-    g_train = parser.add_argument_group("Training")
-    g_train.add_argument("--lr", "--learning-rate", "-l", type=float, default=DEFAULT_LEARNING_RATE, dest="learning_rate", help=f"Initial learning rate (default: {DEFAULT_LEARNING_RATE:g})")
-    g_train.add_argument("--batch-size", "-b", type=int, default=DEFAULT_BATCH_SIZE, help=f"Training batch size (default: {DEFAULT_BATCH_SIZE})")
-    g_train.add_argument("--gradient-accumulation", "-g", type=int, default=DEFAULT_GRADIENT_ACCUMULATION, help=f"Gradient accumulation steps (default: {DEFAULT_GRADIENT_ACCUMULATION})")
-    g_train.add_argument("--epochs", "-e", type=int, default=DEFAULT_EPOCHS, help=f"Maximum training epochs (default: {DEFAULT_EPOCHS})")
-    g_train.add_argument("--warmup-steps", type=int, default=DEFAULT_WARMUP_STEPS, help=f"LR warmup steps (default: {DEFAULT_WARMUP_STEPS})")
-    g_train.add_argument("--weight-decay", type=float, default=DEFAULT_WEIGHT_DECAY, help=f"AdamW weight decay (default: {DEFAULT_WEIGHT_DECAY})")
-    g_train.add_argument("--max-grad-norm", type=float, default=DEFAULT_MAX_GRAD_NORM, help=f"Gradient clipping norm (default: {DEFAULT_MAX_GRAD_NORM})")
-    g_train.add_argument("--seed", "-s", type=int, default=DEFAULT_SEED, help=f"Random seed (default: {DEFAULT_SEED})")
-    g_train.add_argument("--chunk-duration", type=int, default=None,
-                         help="Random latent chunk duration in seconds (default: disabled). "
-                              "Recommended: 60. Extracts a random window each iteration for data "
-                              "augmentation and VRAM savings. WARNING: values below 60s (e.g. 30) "
-                              "may reduce training quality for full-length inference")
-    g_train.add_argument("--chunk-decay-every", type=int, default=DEFAULT_CHUNK_DECAY_EVERY,
-                         help=f"Epoch interval for halving chunk coverage histogram; 0 disables decay (default: {DEFAULT_CHUNK_DECAY_EVERY})")
-    g_train.add_argument("--max-latent-length", type=int, default=None,
-                         help="Random crop length in latent frames (0 = disabled). Takes precedence over --chunk-duration when > 0")
-    g_train.add_argument("--max-steps", "-m", type=int, default=DEFAULT_MAX_STEPS,
-                         help=f"Maximum optimizer steps; 0 = use epochs only (default: {DEFAULT_MAX_STEPS})")
-    g_train.add_argument("--shift", type=float, default=None, help=argparse.SUPPRESS)
-    g_train.add_argument("--num-inference-steps", type=int, default=None, help=argparse.SUPPRESS)
-    g_train.add_argument(
-        "--optimizer-type",
-        type=str,
-        default=DEFAULT_OPTIMIZER_TYPE,
-        choices=["auto", "adamw", "adamw8bit", "adafactor", "prodigy"],
-        help=(
-            "Optimizer (default: auto; resolves to adamw8bit on CUDA, "
-            "adamw otherwise)"
-        ),
-    )
-    g_train.add_argument("--scheduler-type", type=str, default=DEFAULT_SCHEDULER_TYPE, choices=["cosine", "cosine_restarts", "linear", "constant", "constant_with_warmup", "custom"], help=f"LR scheduler (default: {DEFAULT_SCHEDULER_TYPE})")
-    g_train.add_argument("--scheduler-formula", type=str, default="", help="Custom LR formula (Python math expression). Only used with --scheduler-type custom")
-    g_train.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True, help="Recompute activations to save VRAM (~40-60%% less, ~10-30%% slower). On by default; use --no-gradient-checkpointing to disable")
-    g_train.add_argument("--gradient-checkpointing-ratio", type=float, default=DEFAULT_GRADIENT_CHECKPOINTING_RATIO, help=f"Fraction of decoder layers to checkpoint (0.0=none, 0.5=half, 1.0=all). Only applies when --gradient-checkpointing is on (default: {DEFAULT_GRADIENT_CHECKPOINTING_RATIO})")
-    g_train.add_argument("--offload-encoder", action=argparse.BooleanOptionalAction, default=True, help="Move encoder/VAE to CPU after setup (saves ~2-4GB VRAM). On by default; use --no-offload-encoder to disable")
-    g_train.add_argument(
-        "--weight-quantize",
-        action=argparse.BooleanOptionalAction,
-        default=DEFAULT_WEIGHT_QUANTIZE,
-        help="Quantize frozen backbone weights with optimum-quanto after load (install: side-step[quantize]). Off by default",
-    )
-    g_train.add_argument(
-        "--weight-qtype",
-        type=str,
-        default=DEFAULT_WEIGHT_QTYPE,
-        help=(
-            f"optimum-quanto qtype (e.g. qfloat8, qint8); torchao keys (int8, float8) are not "
-            f"supported with LoRA — default: {DEFAULT_WEIGHT_QTYPE}"
-        ),
-    )
-
-    # -- All the Levers (experimental enhancements) -------------------------
-    g_levers = parser.add_argument_group("All the Levers (experimental)")
-    g_levers.add_argument("--ema-decay", type=float, default=DEFAULT_EMA_DECAY, help=f"EMA decay for adapter weights (0=off, 0.9999=typical, default: {DEFAULT_EMA_DECAY})")
-    g_levers.add_argument("--ema-start-step", type=int, default=DEFAULT_EMA_START_STEP, help=f"Step at which EMA tracking begins (0=immediate, default: {DEFAULT_EMA_START_STEP})")
-    g_levers.add_argument("--val-split", type=float, default=DEFAULT_VAL_SPLIT, help=f"Validation holdout fraction (0=off, 0.1=10%%, default: {DEFAULT_VAL_SPLIT})")
-    g_levers.add_argument("--adaptive-timestep-ratio", type=float, default=DEFAULT_ADAPTIVE_TIMESTEP_RATIO, help=f"Adaptive timestep sampling ratio (0=off, 0.3=recommended, default: {DEFAULT_ADAPTIVE_TIMESTEP_RATIO}). Base/SFT only")
-    g_levers.add_argument("--warmup-start-factor", type=float, default=DEFAULT_WARMUP_START_FACTOR, help=f"LR warmup starts at base_lr * this (default: {DEFAULT_WARMUP_START_FACTOR})")
-    g_levers.add_argument("--cosine-eta-min-ratio", type=float, default=DEFAULT_COSINE_ETA_MIN_RATIO, help=f"Cosine scheduler decays LR to base_lr * this (default: {DEFAULT_COSINE_ETA_MIN_RATIO})")
-    g_levers.add_argument("--cosine-restarts-count", type=int, default=DEFAULT_COSINE_RESTARTS_COUNT, help=f"Number of cosine restart cycles (default: {DEFAULT_COSINE_RESTARTS_COUNT})")
-    g_levers.add_argument("--save-best-every-n-steps", type=int, default=DEFAULT_SAVE_BEST_EVERY_N_STEPS, help=f"Step-level best-model check interval (0=epoch only, default: {DEFAULT_SAVE_BEST_EVERY_N_STEPS})")
-    g_levers.add_argument("--lr-scale-self-attn", type=float, default=DEFAULT_LR_SCALE_SELF_ATTN, help=f"LR multiplier for self-attention params (default: {DEFAULT_LR_SCALE_SELF_ATTN})")
-    g_levers.add_argument("--lr-scale-cross-attn", type=float, default=DEFAULT_LR_SCALE_CROSS_ATTN, help=f"LR multiplier for cross-attention params (default: {DEFAULT_LR_SCALE_CROSS_ATTN})")
-    g_levers.add_argument("--lr-scale-mlp", type=float, default=DEFAULT_LR_SCALE_MLP, help=f"LR multiplier for MLP/FFN params (default: {DEFAULT_LR_SCALE_MLP})")
-    g_levers.add_argument("--timestep-mu", type=float, default=None, help="Override logit-normal timestep mean (default: from model config, typically -0.4)")
-    g_levers.add_argument("--timestep-sigma", type=float, default=None, help="Override logit-normal timestep sigma (default: from model config, typically 1.0)")
-
-    # -- Adapter selection ---------------------------------------------------
-    g_adapter = parser.add_argument_group("Adapter")
-    g_adapter.add_argument("--adapter", "-a", "--adapter-type", type=str, default="lora", dest="adapter_type", choices=["lora", "dora", "lokr", "loha", "oft"], help="Adapter type: lora, dora, lokr, loha, or oft (default: lora)")
-
-    # -- LoRA hyperparams ---------------------------------------------------
-    g_lora = parser.add_argument_group("LoRA (used when --adapter=lora)")
-    g_lora.add_argument("--rank", "-r", type=int, default=DEFAULT_RANK, help=f"LoRA rank (default: {DEFAULT_RANK})")
-    g_lora.add_argument("--alpha", type=int, default=DEFAULT_ALPHA, help=f"LoRA alpha (default: {DEFAULT_ALPHA})")
-    g_lora.add_argument("--dropout", type=float, default=DEFAULT_DROPOUT, help=f"LoRA dropout (default: {DEFAULT_DROPOUT})")
-    g_lora.add_argument("--target-modules", nargs="+", default=["q_proj", "k_proj", "v_proj", "o_proj"], help="Modules to apply adapter to")
-    g_lora.add_argument("--bias", type=str, default=DEFAULT_BIAS, choices=["none", "all", "lora_only"], help=f"Bias training mode (default: {DEFAULT_BIAS})")
-    g_lora.add_argument("--attention-type", type=str, default=DEFAULT_ATTENTION_TYPE, choices=["self", "cross", "both"], help=f"Attention layers to target (default: {DEFAULT_ATTENTION_TYPE})")
-    g_lora.add_argument("--self-target-modules", nargs="+", default=None, help="Projections for self-attention only (used when --attention-type=both)")
-    g_lora.add_argument("--cross-target-modules", nargs="+", default=None, help="Projections for cross-attention only (used when --attention-type=both)")
-    g_lora.add_argument("--target-mlp", action=argparse.BooleanOptionalAction, default=True, help="Target MLP/FFN layers (gate_proj, up_proj, down_proj). On by default; use --no-target-mlp to disable")
-
-    # -- LoKR hyperparams ---------------------------------------------------
-    g_lokr = parser.add_argument_group("LoKR (used when --adapter=lokr)")
-    g_lokr.add_argument("--lokr-linear-dim", type=int, default=DEFAULT_LOKR_LINEAR_DIM, help=f"LoKR linear dimension (default: {DEFAULT_LOKR_LINEAR_DIM})")
-    g_lokr.add_argument("--lokr-linear-alpha", type=int, default=DEFAULT_LOKR_LINEAR_ALPHA, help=f"LoKR linear alpha (default: {DEFAULT_LOKR_LINEAR_ALPHA})")
-    g_lokr.add_argument("--lokr-factor", type=int, default=DEFAULT_LOKR_FACTOR, help=f"LoKR factor; -1 for auto (default: {DEFAULT_LOKR_FACTOR})")
-    g_lokr.add_argument("--lokr-decompose-both", action="store_true", default=DEFAULT_LOKR_DECOMPOSE_BOTH, help="Decompose both Kronecker factors")
-    g_lokr.add_argument("--lokr-use-tucker", action="store_true", default=False, help="Use Tucker decomposition")
-    g_lokr.add_argument("--lokr-use-scalar", action="store_true", default=False, help="Use scalar scaling")
-    g_lokr.add_argument("--lokr-weight-decompose", action="store_true", default=False, help="Enable DoRA-style weight decomposition")
-
-    # -- LoHA hyperparams ---------------------------------------------------
-    g_loha = parser.add_argument_group("LoHA (used when --adapter=loha)")
-    g_loha.add_argument("--loha-linear-dim", type=int, default=DEFAULT_LOHA_LINEAR_DIM, help=f"LoHA linear dimension (default: {DEFAULT_LOHA_LINEAR_DIM})")
-    g_loha.add_argument("--loha-linear-alpha", type=int, default=DEFAULT_LOHA_LINEAR_ALPHA, help=f"LoHA linear alpha (default: {DEFAULT_LOHA_LINEAR_ALPHA})")
-    g_loha.add_argument("--loha-factor", type=int, default=DEFAULT_LOHA_FACTOR, help=f"LoHA factor; -1 for auto (default: {DEFAULT_LOHA_FACTOR})")
-    g_loha.add_argument("--loha-use-tucker", action="store_true", default=False, help="Use Tucker decomposition")
-    g_loha.add_argument("--loha-use-scalar", action="store_true", default=False, help="Use scalar scaling")
-
-    # -- OFT hyperparams (experimental) -------------------------------------
-    g_oft = parser.add_argument_group("OFT [Experimental] (used when --adapter=oft)")
-    g_oft.add_argument("--oft-block-size", type=int, default=DEFAULT_OFT_BLOCK_SIZE, help=f"OFT block size (default: {DEFAULT_OFT_BLOCK_SIZE})")
-    g_oft.add_argument("--oft-coft", action="store_true", default=False, help="Enable constrained OFT (Cayley projection)")
-    g_oft.add_argument("--oft-eps", type=float, default=DEFAULT_OFT_EPS, help=f"OFT epsilon for numerical stability (default: {DEFAULT_OFT_EPS})")
+    # Schema-driven groups, in historical display order.
+    _add_schema_section(parser, S_DATA)
+    _add_schema_section(parser, S_TRAINING)
+    _add_schema_section(parser, S_LEVERS)
+    _add_schema_section(parser, S_ADAPTER)
+    _add_schema_section(parser, S_LORA)
+    _add_schema_section(parser, S_LOKR)
+    _add_schema_section(parser, S_LOHA)
+    _add_schema_section(parser, S_OFT)
 
     # -- Config file ---------------------------------------------------------
     g_cfg = parser.add_argument_group("Config file")
     g_cfg.add_argument("--config", type=str, default=None,
                        help="Load training config from JSON file. CLI args override JSON values.")
 
-    # -- Checkpointing -------------------------------------------------------
-    g_ckpt = parser.add_argument_group("Checkpointing")
-    g_ckpt.add_argument("--output-dir", "-o", type=str, default=None, help="Output directory for adapter weights")
-    g_ckpt.add_argument("--save-every", type=int, default=DEFAULT_SAVE_EVERY, help=f"Save checkpoint every N epochs (default: {DEFAULT_SAVE_EVERY})")
-    g_ckpt.add_argument("--resume-from", type=str, default=None, help="Path to checkpoint dir to resume from")
-    g_ckpt.add_argument("--strict-resume", action=argparse.BooleanOptionalAction, default=True,
-                         help="Abort on config mismatch or failed state restore during resume (default: True)")
-    g_ckpt.add_argument("--run-name", "-n", type=str, default=None,
-                         help="Name for this training run (used for output dir, TB logs). Auto-generated if omitted")
-    g_ckpt.add_argument("--save-best", action=argparse.BooleanOptionalAction, default=True,
-                         help="Auto-save best model by smoothed loss (default: True)")
-    g_ckpt.add_argument("--save-best-after", type=int, default=DEFAULT_SAVE_BEST_AFTER,
-                         help=f"Epoch to start best-model tracking (default: {DEFAULT_SAVE_BEST_AFTER})")
-    g_ckpt.add_argument("--early-stop-patience", type=int, default=DEFAULT_EARLY_STOP_PATIENCE,
-                         help=f"Stop if no improvement for N epochs; 0=disabled (default: {DEFAULT_EARLY_STOP_PATIENCE})")
-    g_ckpt.add_argument("--target-loss", type=float, default=DEFAULT_TARGET_LOSS,
-                         dest="target_loss",
-                         help=f"Target loss cruise control (0=disabled). Damps LR as smoothed loss "
-                              f"approaches this value so training holds steady. (default: {DEFAULT_TARGET_LOSS})")
-    g_ckpt.add_argument("--target-loss-floor", type=float, default=DEFAULT_TARGET_LOSS_FLOOR,
-                         dest="target_loss_floor",
-                         help=f"Min LR multiplier at target loss; 0.01=1%% of scheduled LR "
-                              f"(default: {DEFAULT_TARGET_LOSS_FLOOR})")
-    g_ckpt.add_argument("--target-loss-warmup", type=int, default=DEFAULT_TARGET_LOSS_WARMUP,
-                         dest="target_loss_warmup",
-                         help=f"Min steps before cruise control engages "
-                              f"(default: {DEFAULT_TARGET_LOSS_WARMUP})")
-    g_ckpt.add_argument("--target-loss-smoothing", type=float, default=DEFAULT_TARGET_LOSS_SMOOTHING,
-                         dest="target_loss_smoothing",
-                         help=f"EMA beta for loss smoothing in cruise control; higher=smoother "
-                              f"(default: {DEFAULT_TARGET_LOSS_SMOOTHING})")
-
-    # -- Logging / TensorBoard -----------------------------------------------
-    g_log = parser.add_argument_group("Logging / TensorBoard")
-    g_log.add_argument("--log-dir", type=str, default=None, help="TensorBoard log directory (default: {output-dir}/runs)")
-    g_log.add_argument("--log-every", type=int, default=DEFAULT_LOG_EVERY, help=f"Log basic metrics every N steps (default: {DEFAULT_LOG_EVERY})")
-    g_log.add_argument("--log-heavy-every", type=int, default=DEFAULT_LOG_HEAVY_EVERY, help=f"Log per-layer gradient norms every N steps; 0 disables heavy logging (default: {DEFAULT_LOG_HEAVY_EVERY})")
+    _add_schema_section(parser, S_CKPT)
+    _add_schema_section(parser, S_LOG)
 
     # -- Inline preprocessing (chained: preprocess then train) ---------------
     g_pre = parser.add_argument_group("Inline preprocessing")
@@ -590,56 +396,8 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_train_args(parser: argparse.ArgumentParser) -> None:
-    """Add arguments specific to the train subcommand."""
-    g = parser.add_argument_group("Training (advanced)")
-    g.add_argument("--timestep-mode", type=str, default=DEFAULT_TIMESTEP_MODE, choices=["continuous", "discrete"],
-                   dest="timestep_mode",
-                   help=f"Timestep sampling: 'continuous' (logit-normal, recommended) or 'discrete' (8-step turbo schedule). (default: {DEFAULT_TIMESTEP_MODE})")
-    g.add_argument("--cfg-ratio", type=float, default=DEFAULT_CFG_RATIO, help=f"CFG dropout probability (default: {DEFAULT_CFG_RATIO})")
-    g.add_argument("--loss-weighting", type=str, default=DEFAULT_LOSS_WEIGHTING, choices=["none", "min_snr", "flow_snr"],
-                   help=f"Loss weighting: 'flow_snr' (correct for rectified flow), 'min_snr' (DDPM, legacy), or 'none' (flat). (default: {DEFAULT_LOSS_WEIGHTING})")
-    g.add_argument("--snr-gamma", type=float, default=DEFAULT_SNR_GAMMA,
-                   help=f"Gamma clamp for flow_snr/min_snr weighting (default: {DEFAULT_SNR_GAMMA})")
-    g.add_argument("--loss-fn", type=str, default=DEFAULT_LOSS_FN,
-                   choices=["mse", "huber", "pseudo_huber", "x0_mse", "x0_pseudo_huber"],
-                   dest="loss_fn",
-                   help=f"Loss function. x0_ prefix computes loss on reconstructed x0 (t² weighting). (default: {DEFAULT_LOSS_FN})")
-    g.add_argument("--huber-delta", type=float, default=DEFAULT_HUBER_DELTA,
-                   dest="huber_delta",
-                   help=f"Huber loss delta threshold (default: {DEFAULT_HUBER_DELTA})")
-    g.add_argument("--channel-balance", action=argparse.BooleanOptionalAction, default=DEFAULT_CHANNEL_BALANCE,
-                   dest="channel_balance",
-                   help=f"Per-channel fidelity balancing (default: {DEFAULT_CHANNEL_BALANCE})")
-    g.add_argument("--dynamic-channel-balance", action=argparse.BooleanOptionalAction, default=DEFAULT_DYNAMIC_CHANNEL_BALANCE,
-                   dest="dynamic_channel_balance",
-                   help=f"Dynamically rebalance channel weights from running loss (default: {DEFAULT_DYNAMIC_CHANNEL_BALANCE})")
-    g.add_argument("--vae-channel-prior", action=argparse.BooleanOptionalAction, default=DEFAULT_VAE_CHANNEL_PRIOR,
-                   dest="vae_channel_prior",
-                   help=f"Use VAE decoder channel importance in channel weights (default: {DEFAULT_VAE_CHANNEL_PRIOR})")
-    g.add_argument("--latent-noise", type=float, default=DEFAULT_LATENT_NOISE,
-                   dest="latent_noise",
-                   help=f"Per-channel latent noise regularization scale, 0=off (default: {DEFAULT_LATENT_NOISE})")
-    g.add_argument("--t-bias", type=float, default=DEFAULT_T_BIAS,
-                   dest="t_bias",
-                   help=f"Asymmetric timestep emphasis toward low-t detail, 0=symmetric (default: {DEFAULT_T_BIAS})")
-    g.add_argument("--legacy-loss", action="store_true", default=DEFAULT_LEGACY_LOSS,
-                   dest="legacy_loss",
-                   help="Revert all loss math to pre-flow-SNR behavior (flat MSE, no channel balancing)")
-    g.add_argument("--ignore-fisher-map", action="store_true", default=False,
-                   help="Bypass auto-detection of fisher_map.json in --dataset-dir")
-    g.add_argument("--dataset-repeats", "-R", type=int, default=DEFAULT_DATASET_REPEATS,
-                   help=f"Global dataset repetition multiplier (1 = no repetition, default: {DEFAULT_DATASET_REPEATS})")
-    g.add_argument(
-        "--crop-mode",
-        type=str,
-        default=None,
-        dest="crop_mode",
-        metavar="MODE",
-        help=(
-            "Crop/chunk mode hint for the trainer: full, seconds, or latent (wizard-aligned); "
-            "pairs with chunk_duration / max_latent_length. Default: unset"
-        ),
-    )
+    """Add arguments specific to the train subcommand (schema-driven)."""
+    _add_schema_section(parser, S_ADVANCED)
 
 
 def _add_preprocess_subcommand_args(parser: argparse.ArgumentParser) -> None:

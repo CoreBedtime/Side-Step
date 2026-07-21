@@ -407,6 +407,18 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
         from sidestep_engine.training_defaults import get_gui_defaults
         return JSONResponse(get_gui_defaults())
 
+    @app.get("/api/schema")
+    async def get_schema():
+        """Return the full canonical training-option schema.
+
+        One entry per option: name, type, default, section, help,
+        choices, min/max, CLI flag, and GUI field ID.  The frontend can
+        generate forms and validation from this instead of hand-
+        maintaining copies.
+        """
+        from sidestep_engine.core.schema import to_json_schema
+        return JSONResponse(to_json_schema())
+
     @app.get("/api/path-exists")
     async def path_exists(path: str = ""):
         """Lightweight check: does the given directory path exist?"""
