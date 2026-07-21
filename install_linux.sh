@@ -205,6 +205,14 @@ echo "  you can skip these — the wizard will ask on first run."
 echo ""
 echo -e "  ${YELLOW}Requires a HuggingFace account + access to the gated repos.${NC}"
 
+# Pinned checkpoint revisions. Upstream pushes to these HF repos without
+# notice (including the trust_remote_code Python files); pinning means every
+# new install gets the same tested snapshot instead of whatever was pushed
+# last night. Bump deliberately after verifying training still works.
+HF_REV_MONOREPO="19671f406d603126926c1b7e2adc169acbcade22"   # ACE-Step/Ace-Step1.5
+HF_REV_BASE="e432212fec32b8965a14ffa57ae653438d6abd14"       # ACE-Step/acestep-v15-base
+HF_REV_SFT="c410d249e71ea9385a7b586865e65b1473e1098d"        # ACE-Step/acestep-v15-sft
+
 # -- Turbo (lives inside the monorepo ACE-Step/Ace-Step1.5) ---------------
 # That repo also contains the shared VAE + Qwen3-Embedding needed for
 # preprocessing. We exclude the LM (acestep-5Hz-lm-*) — Side-Step
@@ -222,6 +230,7 @@ else
     if [[ "$dl_turbo" =~ ^[Yy]$ ]]; then
         echo ""
         _hf_download "ACE-Step/Ace-Step1.5" \
+            --revision "$HF_REV_MONOREPO" \
             --local-dir "$CKPT_DIR" \
             --exclude "acestep-5Hz-lm-*/*" \
             && ok "Turbo + VAE + Qwen3-Embedding downloaded to $CKPT_DIR"
@@ -237,6 +246,7 @@ elif [[ -d "$CKPT_DIR/acestep-v15-turbo" ]]; then
     # They have turbo DiT but missing shared components — partial download?
     warn "VAE or Qwen3-Embedding missing. Re-downloading shared components..."
     _hf_download "ACE-Step/Ace-Step1.5" \
+        --revision "$HF_REV_MONOREPO" \
         --local-dir "$CKPT_DIR" \
         --include "vae/*" "Qwen3-Embedding-0.6B/*" "config.json" \
         && ok "Shared components downloaded"
@@ -252,6 +262,7 @@ else
     if [[ "$dl_base" =~ ^[Yy]$ ]]; then
         echo ""
         _hf_download "ACE-Step/acestep-v15-base" \
+            --revision "$HF_REV_BASE" \
             --local-dir "$CKPT_DIR/acestep-v15-base" \
             && ok "Base downloaded to $CKPT_DIR/acestep-v15-base"
     else
@@ -269,6 +280,7 @@ else
     if [[ "$dl_sft" =~ ^[Yy]$ ]]; then
         echo ""
         _hf_download "ACE-Step/acestep-v15-sft" \
+            --revision "$HF_REV_SFT" \
             --local-dir "$CKPT_DIR/acestep-v15-sft" \
             && ok "SFT downloaded to $CKPT_DIR/acestep-v15-sft"
     else

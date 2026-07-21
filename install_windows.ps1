@@ -214,6 +214,14 @@ $qwenDir = Join-Path $checkpointsDir "Qwen3-Embedding-0.6B"
 $baseDir = Join-Path $checkpointsDir "acestep-v15-base"
 $sftDir = Join-Path $checkpointsDir "acestep-v15-sft"
 
+# Pinned checkpoint revisions.  Upstream pushes to these HF repos without
+# notice (including the trust_remote_code Python files); pinning means every
+# new install gets the same tested snapshot instead of whatever was pushed
+# last night.  Bump deliberately after verifying training still works.
+$hfRevMonorepo = "19671f406d603126926c1b7e2adc169acbcade22"   # ACE-Step/Ace-Step1.5
+$hfRevBase     = "e432212fec32b8965a14ffa57ae653438d6abd14"   # ACE-Step/acestep-v15-base
+$hfRevSft      = "c410d249e71ea9385a7b586865e65b1473e1098d"   # ACE-Step/acestep-v15-sft
+
 # -- Turbo (lives inside the monorepo ACE-Step/Ace-Step1.5) ----------------
 # That repo also contains the shared VAE + Qwen3-Embedding needed for
 # preprocessing.  We exclude the LM (acestep-5Hz-lm-*) -- Side-Step
@@ -230,7 +238,7 @@ if (Test-Path $turboDir) {
     if ([string]::IsNullOrWhiteSpace($dlTurbo)) { $dlTurbo = "N" }
     if ($dlTurbo -match '^[Yy]$') {
         Write-Host ""
-        if (Invoke-HfDownload @("ACE-Step/Ace-Step1.5", "--local-dir", $checkpointsDir, "--exclude", "acestep-5Hz-lm-*/*")) {
+        if (Invoke-HfDownload @("ACE-Step/Ace-Step1.5", "--revision", $hfRevMonorepo, "--local-dir", $checkpointsDir, "--exclude", "acestep-5Hz-lm-*/*")) {
             Write-Ok "Turbo + VAE + Qwen3-Embedding downloaded to $checkpointsDir"
         }
     } else {
@@ -243,7 +251,7 @@ if ((Test-Path $vaeDir) -and (Test-Path $qwenDir)) {
     Write-Ok "Shared VAE + text encoder found"
 } elseif (Test-Path $turboDir) {
     Write-Warn "VAE or Qwen3-Embedding missing. Re-downloading shared components..."
-    if (Invoke-HfDownload @("ACE-Step/Ace-Step1.5", "--local-dir", $checkpointsDir, "--include", "vae/*", "Qwen3-Embedding-0.6B/*", "config.json")) {
+    if (Invoke-HfDownload @("ACE-Step/Ace-Step1.5", "--revision", $hfRevMonorepo, "--local-dir", $checkpointsDir, "--include", "vae/*", "Qwen3-Embedding-0.6B/*", "config.json")) {
         Write-Ok "Shared components downloaded"
     }
 }
@@ -257,7 +265,7 @@ if (Test-Path $baseDir) {
     if ([string]::IsNullOrWhiteSpace($dlBase)) { $dlBase = "N" }
     if ($dlBase -match '^[Yy]$') {
         Write-Host ""
-        if (Invoke-HfDownload @("ACE-Step/acestep-v15-base", "--local-dir", $baseDir)) {
+        if (Invoke-HfDownload @("ACE-Step/acestep-v15-base", "--revision", $hfRevBase, "--local-dir", $baseDir)) {
             Write-Ok "Base downloaded to $baseDir"
         }
     } else {
@@ -274,7 +282,7 @@ if (Test-Path $sftDir) {
     if ([string]::IsNullOrWhiteSpace($dlSft)) { $dlSft = "N" }
     if ($dlSft -match '^[Yy]$') {
         Write-Host ""
-        if (Invoke-HfDownload @("ACE-Step/acestep-v15-sft", "--local-dir", $sftDir)) {
+        if (Invoke-HfDownload @("ACE-Step/acestep-v15-sft", "--revision", $hfRevSft, "--local-dir", $sftDir)) {
             Write-Ok "SFT downloaded to $sftDir"
         }
     } else {

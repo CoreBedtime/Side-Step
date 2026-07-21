@@ -302,11 +302,8 @@ class TrainingMonitorScreen(Screen):
                 early_stop_patience=self.config.get("early_stop_patience", 0),
             )
 
-            # ---- dispatch to the right trainer ----------------------------
-            if self.run.trainer_type == "vanilla":
-                self._run_vanilla(lora_config, training_config, worker)
-            else:
-                self._run_fixed(lora_config, training_config, worker)
+            # Vanilla trainer was removed long ago; fixed is the only path.
+            self._run_fixed(lora_config, training_config, worker)
 
         except Exception as exc:
             self._log_queue.put(("error", f"Training failed: {exc}"))
@@ -411,23 +408,6 @@ class TrainingMonitorScreen(Screen):
         else:
             self._log_queue.put(("warning", "Training stopped by user"))
             self.app.call_from_thread(self._on_training_complete, False)
-
-    # ------------------------------------------------------------------
-    # Vanilla trainer (callback pattern)
-    # ------------------------------------------------------------------
-
-    def _run_vanilla(
-        self,
-        lora_config,
-        training_config,
-        worker,
-    ) -> None:
-        """Vanilla trainer has been removed -- redirect to fixed trainer."""
-        self._log_queue.put((
-            "error",
-            "VanillaTrainer has been removed. Please use 'sidestep train' instead.",
-        ))
-        self.app.call_from_thread(self._on_training_complete, False)
 
     # =========================================================================
     # UI Updates (called on the main thread)

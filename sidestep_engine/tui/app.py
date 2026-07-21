@@ -35,7 +35,6 @@ class SideStepApp(App):
         Binding("?", "help", "Help"),
         Binding("d", "goto_dashboard", "Dashboard", show=True),
         Binding("f", "new_fixed_training", "Fixed Training"),
-        Binding("v", "new_vanilla_training", "Vanilla Training"),
         Binding("p", "goto_preprocess", "Preprocess"),
         Binding("e", "goto_estimate", "Estimate"),
         Binding("h", "goto_history", "History"),
@@ -83,12 +82,6 @@ class SideStepApp(App):
         
         self.push_screen(TrainingConfigScreen(trainer_type="train"))
     
-    def action_new_vanilla_training(self) -> None:
-        """Start a new vanilla training configuration."""
-        from sidestep_engine.tui.screens.training_config import TrainingConfigScreen
-        
-        self.push_screen(TrainingConfigScreen(trainer_type="vanilla"))
-    
     def action_goto_preprocess(self) -> None:
         """Navigate to dataset browser / preprocessing screen."""
         from sidestep_engine.tui.screens.dataset_browser import DatasetBrowserScreen
@@ -119,14 +112,13 @@ class SideStepApp(App):
             "[bold]Quick Start Workflow:[/bold]\n"
             "1. [P] Preprocess your audio files first\n"
             "2. [E] Estimate to find best layers (optional)\n"
-            "3. [F] Fixed Training (recommended) or [V] Vanilla\n\n"
+            "3. [F] Fixed Training\n\n"
             "[bold]Navigation:[/bold]\n"
             "  [D] Dashboard       [H] History\n"
             "  [S] Settings        [Q] Quit\n"
             "  [Esc] Go Back       [?] This Help\n\n"
-            "[bold]Training Types:[/bold]\n"
-            "• Fixed = corrected training logic (recommended)\n"
-            "• Vanilla = original behavior (for compatibility)\n\n"
+            "[bold]Training:[/bold]\n"
+            "• Fixed = corrected, variant-aware training logic\n\n"
             "[bold]Tips:[/bold]\n"
             "• Tab/Shift+Tab to navigate forms\n"
             "• Each option shows impact hints below it"

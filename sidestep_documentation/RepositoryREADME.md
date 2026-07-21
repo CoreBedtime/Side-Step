@@ -154,7 +154,7 @@ We **strongly recommend** using [uv](https://docs.astral.sh/uv/) for dependency 
 
 ### Windows (Easy Install)
 
-Download or clone Side-Step, then double-click **`install_windows.bat`** (or run the PowerShell script). It handles everything: uv, Python 3.11, Side-Step deps, ACE-Step (alongside for checkpoints), and model download.
+Download or clone Side-Step, then double-click **`install_windows.bat`** (or run the PowerShell script). It handles everything: uv, Python 3.11, Side-Step deps, and (optionally) model checkpoint download — pinned to tested revisions.
 
 ```powershell
 # Or run from PowerShell directly:
@@ -163,9 +163,9 @@ cd Side-Step
 .\install_windows.ps1
 ```
 
-The installer creates two sibling directories:
-- `Side-Step/` -- your training toolkit (standalone)
-- `ACE-Step-1.5/` -- model checkpoints + optional vanilla mode
+Side-Step is fully standalone — no ACE-Step repo clone, no sibling
+directories. Checkpoints live in `Side-Step/checkpoints/` (or wherever
+you point `--checkpoint-dir`).
 
 ### Linux / macOS (Recommended: uv)
 
@@ -186,15 +186,18 @@ uv run python train.py
 
 ### Model Checkpoints
 
-You need the model weights before you can train. Options:
+You need the model weights before you can train (weights only — never the
+ACE-Step repo). Options:
 
-1. **From ACE-Step (recommended):** Clone ACE-Step 1.5 alongside Side-Step and use `acestep-download`:
+1. **Installer download (recommended):** both installers offer to download
+   the checkpoints, pinned to revisions Side-Step was tested against.
+   Upstream pushes to the HuggingFace repos without notice; the pin keeps
+   new installs on a known-good snapshot.
+2. **Manual download:**
    ```bash
-   git clone https://github.com/ace-step/ACE-Step-1.5.git
-   cd ACE-Step-1.5 && uv sync && uv run acestep-download
+   uv run hf download ACE-Step/Ace-Step1.5 --local-dir ./checkpoints --exclude "acestep-5Hz-lm-*/*"
    ```
-   Then point Side-Step at the checkpoints folder on first run or via `--checkpoint-dir ../ACE-Step-1.5/checkpoints`.
-2. **Manual download:** Get the weights from [HuggingFace](https://huggingface.co/ACE-Step/Ace-Step1.5) and place them in a `checkpoints/` directory inside Side-Step.
+   Or browse [HuggingFace](https://huggingface.co/ACE-Step/Ace-Step1.5) and place the model folders in a `checkpoints/` directory inside Side-Step.
 
 > **IMPORTANT: Never rename checkpoint folders.** The model loader uses folder names and `config.json` files to identify model variants (turbo, base, sft). Renaming them will break loading.
 

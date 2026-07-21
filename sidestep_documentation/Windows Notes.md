@@ -15,20 +15,14 @@ The installer handles everything:
 
 - Installs `uv` (if not already present)
 - Installs Python 3.11
-- Clones ACE-Step 1.5 alongside Side-Step
 - Runs `uv sync` for all dependencies
 - Installs Electron GUI dependencies (`npm install`)
-- Optionally downloads model checkpoints
+- Optionally downloads model checkpoints (pinned to tested revisions)
 
 **Requirements:** Windows 10/11, PowerShell 5.1+, Git, NVIDIA GPU with CUDA drivers.
 
-The installer creates two sibling directories:
-
-```
-Parent/
-├── Side-Step/       <-- Your training toolkit
-└── ACE-Step-1.5/    <-- Model checkpoints
-```
+Side-Step is fully standalone — no ACE-Step repo clone needed. Checkpoints
+download into `Side-Step/checkpoints/`.
 
 ### Running from PowerShell or CMD
 

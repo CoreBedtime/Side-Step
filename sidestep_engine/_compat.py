@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 # Version pin
 # ---------------------------------------------------------------------------
 
-TESTED_ACESTEP_COMMIT = "46116a6"
+TESTED_ACESTEP_COMMIT = "dce6214"
 """Short SHA of the upstream ``ace-step/ACE-Step-1.5`` commit that the
-vendored files were last synced from."""
+vendored/bundled files were last synced and verified against.  Must match
+the sync commit recorded in
+``models/bundled_acestep/BUNDLED_ACESTEP_SOURCE.txt`` (parity-tested)."""
 
 SIDESTEP_VERSION = "1.1.2-beta"
 """Current Side-Step release string."""

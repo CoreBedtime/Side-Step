@@ -276,8 +276,7 @@ def show_config(
         lora_cfg: LoRA configuration.
         train_cfg: Training configuration.
         subcommand: Active subcommand (used to skip irrelevant groups).
-        skip_corrected: If True, hide the 'Corrected Training' group
-                        (e.g. for the vanilla subcommand).
+        skip_corrected: If True, hide the 'Corrected Training' group.
     """
     if is_rich_active() and console is not None:
         _show_rich(lora_cfg, train_cfg, subcommand, skip_corrected)

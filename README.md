@@ -142,10 +142,11 @@ The installer handles Python 3.11, PyTorch, Electron, and all dependencies via `
 
 ### Get Models
 
-You need the ACE-Step 1.5 checkpoints. If you don't have them:
+You need the ACE-Step 1.5 checkpoints (weights only — Side-Step is fully
+standalone and does **not** need the ACE-Step repo). The installers offer to
+download them for you, pinned to tested revisions. Manually:
 ```bash
-git clone https://github.com/ace-step/ACE-Step-1.5.git
-cd ACE-Step-1.5 && uv sync && uv run acestep-download
+uv run hf download ACE-Step/Ace-Step1.5 --local-dir ./checkpoints --exclude "acestep-5Hz-lm-*/*"
 ```
 
 ---

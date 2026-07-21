@@ -137,6 +137,48 @@ class TestFailureAndRegressionPaths:
         with pytest.raises(ImportError):
             importlib.import_module("acestep.models.common.configuration_acestep_v15")
 
+    def test_sibling_checkout_not_auto_detected(self, path_isolation, monkeypatch, tmp_path):
+        """A ``../ACE-Step-1.5`` sibling checkout must NOT be picked up implicitly.
+
+        Bundled-first policy: only an explicit ``ACESTEP_SRC`` may override
+        the pinned snapshot.  (Previously the sibling was preferred, so devs
+        and docs-following users silently ran unpinned upstream code.)
+        """
+        monkeypatch.delenv("ACESTEP_SRC", raising=False)
+        # Fake repo root is tmp_path/fakeroot (from path_isolation); plant a
+        # sibling checkout with a marker next to it.
+        sibling = tmp_path / "ACE-Step-1.5"
+        shutil.copytree(_real_bundled_tree() / "acestep", sibling / "acestep")
+        cfg_file = sibling / "acestep" / "models" / "common" / "configuration_acestep_v15.py"
+        cfg_file.write_text(
+            cfg_file.read_text(encoding="utf-8")
+            + "\nAceStepConfig._SIDE_STEP_TEST_MARKER = 'sibling_leaked'\n",
+            encoding="utf-8",
+        )
+        dest = tmp_path / "bundled_wins"
+        shutil.copytree(_real_bundled_tree(), dest)
+        monkeypatch.setattr(ar, "bundled_acestep_root", lambda: dest)
+
+        _purge_acestep_from_modules()
+        ar._ensure_acestep_remote_imports()
+
+        from acestep.models.common.configuration_acestep_v15 import AceStepConfig
+
+        assert getattr(AceStepConfig, "_SIDE_STEP_TEST_MARKER", None) is None, (
+            "sibling ACE-Step checkout leaked into imports; bundled must win"
+        )
+
+    def test_version_pins_agree(self):
+        """_compat.TESTED_ACESTEP_COMMIT must match the bundled sync record."""
+        from sidestep_engine._compat import TESTED_ACESTEP_COMMIT
+
+        record = (_real_bundled_tree() / "BUNDLED_ACESTEP_SOURCE.txt").read_text(encoding="utf-8")
+        full_sha = record.split("Sync commit:")[1].strip().split()[0]
+        assert full_sha.startswith(TESTED_ACESTEP_COMMIT), (
+            f"_compat pin {TESTED_ACESTEP_COMMIT} does not match bundled sync "
+            f"commit {full_sha[:12]}… — refresh both together"
+        )
+
     def test_broken_acestep_models_stub_repaired(self, path_isolation, monkeypatch, tmp_path):
         """Legacy ``acestep.models`` without ``__path__`` is fixed; common imports work."""
         monkeypatch.delenv("ACESTEP_SRC", raising=False)

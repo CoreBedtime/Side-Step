@@ -2,20 +2,27 @@
 
 Checkpoint directories ship thin Python stubs that import ``acestep.models.common``
 (and sometimes ``acestep.models.flow_matching_solvers``). Side-Step prepends a
-suitable ``sys.path`` entry so those imports resolve:
+``sys.path`` entry so those imports resolve:
 
-1. ``ACESTEP_SRC`` (full ACE-Step checkout)
-2. ``../ACE-Step-1.5`` next to the Side-Step repo
-3. ``<Side-Step>/vendor/ACE-Step-1.5``
-4. A minimal bundled tree under ``bundled_acestep/`` (snapshot of upstream
-   ``acestep/models/common``; see ``bundled_acestep/BUNDLED_ACESTEP_SOURCE.txt``)
+1. ``ACESTEP_SRC`` — explicit power-user override pointing at a full
+   ACE-Step checkout.  Only honoured when the env var is SET; nothing is
+   picked up implicitly.
+2. The bundled tree under ``bundled_acestep/`` — a pinned snapshot of
+   upstream ``acestep/models/common`` (see
+   ``bundled_acestep/BUNDLED_ACESTEP_SOURCE.txt``).  This is the default:
+   Side-Step is fully standalone and does NOT look for a sibling
+   ACE-Step checkout.  (Historically ``../ACE-Step-1.5`` was preferred
+   when present, which meant devs and docs-following users silently ran
+   whatever upstream committed that week while everyone else ran the
+   pinned snapshot — exactly backwards for stability.)
 
 A candidate is accepted only if
 ``acestep/models/common/configuration_acestep_v15.py`` exists, so a hollow
 ``acestep`` package cannot shadow the bundled fallback.
 
 When refreshing bundled files, copy from ACE-Step 1.5 ``acestep/models/common/``
-and update ``BUNDLED_ACESTEP_SOURCE.txt``.
+and update ``BUNDLED_ACESTEP_SOURCE.txt`` (keep ``_compat.TESTED_ACESTEP_COMMIT``
+in sync — the parity test checks they agree).
 """
 
 from __future__ import annotations
@@ -44,15 +51,16 @@ def bundled_acestep_root() -> Path:
 
 
 def _prepend_acestep_src_paths() -> None:
-    """Prepend the first matching ACE-Step tree so ``import acestep.models.common`` works."""
+    """Prepend the first matching ACE-Step tree so ``import acestep.models.common`` works.
+
+    Bundled-first policy: the pinned in-repo snapshot is authoritative.
+    ``ACESTEP_SRC`` (when explicitly set) is the only way to use external
+    upstream code — sibling checkouts are deliberately NOT auto-detected.
+    """
     candidates: list[Path] = []
     env = os.environ.get("ACESTEP_SRC")
     if env:
         candidates.append(Path(env).expanduser().resolve())
-    # sidestep_engine/models/acestep_remote_imports.py -> parents[2] == Side-Step repo root
-    side_step_root = Path(__file__).resolve().parents[2]
-    candidates.append((side_step_root.parent / "ACE-Step-1.5").resolve())
-    candidates.append((side_step_root / "vendor" / "ACE-Step-1.5").resolve())
     candidates.append(bundled_acestep_root().resolve())
 
     for root in candidates:

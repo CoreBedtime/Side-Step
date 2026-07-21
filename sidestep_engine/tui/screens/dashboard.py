@@ -47,7 +47,6 @@ class DashboardScreen(Screen):
     
     BINDINGS = [
         Binding("f", "fixed_training", "Fixed Training", show=True),
-        Binding("v", "vanilla_training", "Vanilla Training", show=True),
         Binding("p", "preprocess", "Preprocess", show=True),
         Binding("e", "estimate", "Estimate", show=True),
         Binding("h", "history", "History"),
@@ -194,7 +193,6 @@ class DashboardScreen(Screen):
         # Quick action buttons
         with Horizontal(id="quick-actions"):
             yield Button("[F] Fixed Training", id="btn-fixed", variant="primary")
-            yield Button("[V] Vanilla Training", id="btn-vanilla", variant="default")
             yield Button("[P] Preprocess", id="btn-preprocess", variant="success")
             yield Button("[E] Estimate", id="btn-estimate", variant="warning")
         
@@ -355,8 +353,6 @@ class DashboardScreen(Screen):
         
         if button_id == "btn-fixed":
             self.action_fixed_training()
-        elif button_id == "btn-vanilla":
-            self.action_vanilla_training()
         elif button_id == "btn-preprocess":
             self.action_preprocess()
         elif button_id == "btn-estimate":
@@ -377,10 +373,6 @@ class DashboardScreen(Screen):
     def action_fixed_training(self) -> None:
         """Start fixed training configuration."""
         self.app.action_new_fixed_training()
-    
-    def action_vanilla_training(self) -> None:
-        """Start vanilla training configuration."""
-        self.app.action_new_vanilla_training()
     
     def action_preprocess(self) -> None:
         """Go to preprocessing/dataset browser."""

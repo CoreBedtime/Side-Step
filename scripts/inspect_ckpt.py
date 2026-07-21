@@ -9,7 +9,12 @@ import torch
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(SCRIPT_DIR, "weight_report.txt")
-CKPT = r"C:\Users\sneth\ai\ACE-Step-1.5\checkpoints"
+# Checkpoints root: first CLI arg, or ./checkpoints relative to the repo.
+CKPT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+    os.path.dirname(SCRIPT_DIR), "checkpoints"
+)
+if not os.path.isdir(CKPT):
+    sys.exit(f"usage: python scripts/inspect_ckpt.py <checkpoints-dir>  (not found: {CKPT})")
 
 F = open(OUT, "w", encoding="utf-8")
 

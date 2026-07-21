@@ -23,14 +23,11 @@ irm https://astral.sh/uv/install.ps1 | iex
 
 1. Clone Side-Step (or download as zip)
 2. Double-click `install_windows.bat`
-3. The script handles everything: uv, Python, ACE-Step, dependencies, model download
+3. The script handles everything: uv, Python, dependencies, and (optionally)
+   model checkpoint download — pinned to tested revisions
 
-The installer creates two sibling folders:
-```
-your-folder/
-  ACE-Step-1.5/     # Base repo (checkpoints, optional vanilla)
-  Side-Step/         # Your training toolkit
-```
+Side-Step is fully standalone: no ACE-Step repo clone is needed, only the
+model weights in a `checkpoints/` directory.
 
 ### Option 2: Manual Install (Linux / macOS / Windows)
 
@@ -50,19 +47,19 @@ sidestep gui           # desktop GUI
 
 ### Getting Model Checkpoints
 
-You need the ACE-Step model weights before training. Two options:
+You need the ACE-Step model *weights* before training (not the ACE-Step
+repo — Side-Step is fully standalone). Two options:
 
-**Option A: Use ACE-Step's downloader**
-```bash
-git clone https://github.com/ace-step/ACE-Step-1.5.git
-cd ACE-Step-1.5
-uv sync
-uv run acestep-download
-```
-This downloads ~8 GB of weights into `ACE-Step-1.5/checkpoints/`.
+**Option A: Let the installer download them (recommended)**
+Both installers offer to download the checkpoints, pinned to revisions that
+Side-Step was tested against — upstream pushes to the HuggingFace repos
+without notice, and the pin protects you from untested changes.
 
 **Option B: Manual download from HuggingFace**
-Go to [HuggingFace ACE-Step](https://huggingface.co/ACE-Step/Ace-Step1.5) and download the model folders into a `checkpoints/` directory.
+```bash
+uv run hf download ACE-Step/Ace-Step1.5 --local-dir ./checkpoints --exclude "acestep-5Hz-lm-*/*"
+```
+Or browse [HuggingFace ACE-Step](https://huggingface.co/ACE-Step/Ace-Step1.5) and download the model folders into a `checkpoints/` directory.
 
 > **IMPORTANT:** Never rename checkpoint folders. See [[Model Management]] for details.
 
