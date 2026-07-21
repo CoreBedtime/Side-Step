@@ -430,8 +430,9 @@ SCHEMA: Tuple[SchemaField, ...] = (
        help="Stop if no improvement for N epochs; 0=disabled (default: {default})"),
     _f(name="target_loss", type="float", default=0.0, section=S_CKPT,
        cli=("--target-loss",), gui_id="full-target-loss", min=0.0,
-       help=("Target loss cruise control (0=disabled). Damps LR as smoothed loss "
-             "approaches this value so training holds steady. (default: {default})")),
+       help=("Target loss cruise control (0=disabled). Damps LR as the smoothed RAW "
+             "(unweighted) loss approaches this value, so the target means the same "
+             "thing under any loss weighting/balancing config. (default: {default})")),
     _f(name="target_loss_floor", type="float", default=0.01, section=S_CKPT,
        cli=("--target-loss-floor",), gui_id="full-target-loss-floor",
        min=0.0, max=1.0,
@@ -464,11 +465,12 @@ SCHEMA: Tuple[SchemaField, ...] = (
     _f(name="cfg_ratio", type="float", default=0.15, section=S_ADVANCED,
        cli=("--cfg-ratio",), gui_id="full-cfg-dropout", min=0.0, max=1.0,
        help="CFG dropout probability (default: {default})"),
-    _f(name="loss_weighting", type="str", default="flow_snr", section=S_ADVANCED,
+    _f(name="loss_weighting", type="str", default="none", section=S_ADVANCED,
        choices=("none", "min_snr", "flow_snr"),
        cli=("--loss-weighting",), gui_id="full-loss-weighting",
-       help=("Loss weighting: 'flow_snr' (correct for rectified flow), "
-             "'min_snr' (DDPM, legacy), or 'none' (flat). (default: {default})")),
+       help=("Loss weighting: 'none' (flat, reference objective), 'flow_snr' "
+             "(U-shaped emphasis for rectified flow), or 'min_snr' "
+             "(Min-SNR-gamma, v-prediction form). (default: {default})")),
     _f(name="snr_gamma", type="float", default=5.0, section=S_ADVANCED,
        cli=("--snr-gamma",), gui_id="full-snr-gamma", gui_format="decimal1",
        min=0.0,
@@ -493,7 +495,7 @@ SCHEMA: Tuple[SchemaField, ...] = (
        cli=("--vae-channel-prior",), cli_action="bool_optional",
        gui_id="full-vae-channel-prior",
        help="Use VAE decoder channel importance in channel weights (default: {default})"),
-    _f(name="latent_noise", type="float", default=0.02, section=S_ADVANCED,
+    _f(name="latent_noise", type="float", default=0.0, section=S_ADVANCED,
        cli=("--latent-noise",), gui_id="full-latent-noise", min=0.0,
        help="Per-channel latent noise regularization scale, 0=off (default: {default})"),
     _f(name="t_bias", type="float", default=0.5, section=S_ADVANCED,

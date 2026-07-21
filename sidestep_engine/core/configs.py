@@ -292,9 +292,10 @@ class TrainingConfigV2(TrainingConfig):
     data_proportion: float = 0.5
     """Data proportion for sample_t_r (from model config)."""
 
-    loss_weighting: str = "flow_snr"
-    """Loss weighting strategy: 'flow_snr' (correct for rectified flow),
-    'min_snr' (DDPM formula, legacy), or 'none' (flat)."""
+    loss_weighting: str = "none"
+    """Loss weighting strategy: 'none' (flat, reference objective — matches
+    upstream ACE-Step), 'flow_snr' (U-shaped emphasis for rectified flow),
+    or 'min_snr' (Min-SNR-gamma, v-prediction form)."""
 
     snr_gamma: float = 5.0
     """Gamma clamp for flow_snr/min_snr weighting."""
@@ -316,8 +317,8 @@ class TrainingConfigV2(TrainingConfig):
     vae_channel_prior: bool = True
     """Incorporate VAE decoder channel importance into channel weights."""
 
-    latent_noise: float = 0.02
-    """Per-channel latent noise regularisation scale. 0 = disabled."""
+    latent_noise: float = 0.0
+    """Per-channel latent noise regularisation scale. 0 = disabled (default)."""
 
     t_bias: float = 0.5
     """Asymmetric timestep emphasis toward low-t (detail). 0 = symmetric."""
@@ -389,8 +390,10 @@ class TrainingConfigV2(TrainingConfig):
     after best-model tracking is active.  0 = disabled."""
 
     target_loss: float = 0.0
-    """Target loss for cruise control.  When smoothed loss reaches this value,
-    LR is progressively damped to hold steady.  0 = disabled."""
+    """Target loss for cruise control.  When the smoothed RAW (unweighted)
+    loss reaches this value, LR is progressively damped to hold steady.
+    Keyed to the raw loss so the target is comparable across loss
+    weighting/balancing configs.  0 = disabled."""
 
     target_loss_floor: float = 0.01
     """Minimum LR multiplier when target loss cruise control is active.
