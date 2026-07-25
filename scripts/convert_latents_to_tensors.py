@@ -7,18 +7,23 @@ the stored encoder_hidden_states is a shape-correct dummy that CFG dropout
 replaces with the model's null_condition_emb on every step.
 
 Context channel (``--context``):
-    self     (default) cover-aligned: context = the clip's own latents.
-             Training task == noFSQ cover inference: "given this content
-             in context, reproduce it — with your texture."
-    silence  standard text2music regime (what audio preprocessing does).
-             Fallback if self-context training collapses (watch the
-             discrimination score).
+    silence  (default) standard text2music regime — identical to what audio
+             preprocessing produces, using the checkpoint's REAL
+             silence_latent.pt (not zeros; zeros are out-of-distribution
+             for the context channel). This is the proven path: every
+             community LoRA is trained this way and transfers to cover
+             inference. Requires --checkpoint-dir.
+    self     experimental cover-aligned: context = the clip's own latents
+             (matches noFSQ cover inference exactly). Risk: with the answer
+             in the context channel, reconstruction may be too easy and the
+             adapter under-trains — check the discrimination score early.
 
 Usage:
     uv run python scripts/convert_latents_to_tensors.py \
         --input "C:/path/to/latents_npy" \
         --output ./preprocessed_tensors/glasser_diet_latents \
-        [--context self] [--emb-dim 2048]
+        --checkpoint-dir ./checkpoints --model sft \
+        [--context silence] [--emb-dim 2048]
 """
 
 from __future__ import annotations
@@ -53,7 +58,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--input", required=True, help="Directory of .npy latent files")
     ap.add_argument("--output", required=True, help="Output dir for .pt tensors")
-    ap.add_argument("--context", choices=("self", "silence"), default="self")
+    ap.add_argument("--context", choices=("silence", "self"), default="silence")
+    ap.add_argument("--checkpoint-dir", default=None,
+                    help="Checkpoints root (required for --context silence; "
+                         "used to load the real silence_latent.pt)")
+    ap.add_argument("--model", default="sft", dest="variant",
+                    help="Model variant whose silence latent to use (default: sft)")
     ap.add_argument("--emb-dim", type=int, default=2048,
                     help="Text-embedding dim of the target variant (base/sft: 2048)")
     args = ap.parse_args()
@@ -66,6 +76,18 @@ def main() -> int:
         sys.exit(f"no .npy files in {in_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    silence = None
+    if args.context == "silence":
+        if not args.checkpoint_dir:
+            sys.exit("--context silence requires --checkpoint-dir "
+                     "(loads the checkpoint's real silence_latent.pt; "
+                     "zeros would be out-of-distribution for the context channel)")
+        from sidestep_engine.models.loader import load_silence_latent
+        silence = load_silence_latent(
+            args.checkpoint_dir, device="cpu", precision="fp32",
+            variant=args.variant,
+        ).float()  # [1, T_max, 64]
+
     n_ok = 0
     for f in files:
         try:
@@ -76,9 +98,15 @@ def main() -> int:
         T = lat.shape[0]
 
         if args.context == "self":
-            src = lat.unsqueeze(0)  # cover-aligned: own content as source
+            src = lat.unsqueeze(0)  # experimental: own content as source
         else:
-            src = torch.zeros(1, T, 64)  # silence-equivalent neutral context
+            # Real silence latent, tiled if the clip outruns it (matches
+            # vendor.preprocess_context semantics for the standard regime).
+            if silence.shape[1] >= T:
+                src = silence[:, :T, :]
+            else:
+                reps = -(-T // silence.shape[1])  # ceil division
+                src = silence.repeat(1, reps, 1)[:, :T, :]
         chunk_mask = torch.ones(1, T, 64)
         context = torch.cat([src, chunk_mask], dim=-1)[0]  # [T, 128]
 
