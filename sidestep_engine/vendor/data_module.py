@@ -256,10 +256,10 @@ class PreprocessedTensorDataset(Dataset):
                     sample = torch.load(p, map_location="cpu", weights_only=True)
                     _share_sample_tensors(sample)
                     self._ram_cache.append(sample)
+                _cache_mb = sum(os.path.getsize(p) for p in self.valid_paths) / (1024 * 1024)
                 logger.info(
-                    "RAM cache enabled: %d samples loaded into shared memory (%.1f MB)",
-                    len(self._ram_cache),
-                    sum(os.path.getsize(p) for p in self.valid_paths) / (1024 * 1024),
+                    f"RAM cache enabled: {len(self._ram_cache)} samples "
+                    f"loaded into shared memory ({_cache_mb:.1f} MB)"
                 )
             except Exception as exc:
                 logger.warning("RAM cache failed, falling back to disk I/O: %s", exc)

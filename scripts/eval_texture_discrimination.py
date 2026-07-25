@@ -63,6 +63,10 @@ def main() -> int:
     ap.add_argument("--batches", type=int, default=24, help="Max batches per dataset")
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--null-cond", action="store_true",
+                    help="Replace stored text conditioning with the model's "
+                         "null_condition_emb (use for adapters trained with "
+                         "--cfg-ratio 1.0 / unconditional texture LoRAs)")
     args = ap.parse_args()
 
     import torch
@@ -115,6 +119,12 @@ def main() -> int:
             eam = batch["encoder_attention_mask"].to(device, dtype=dtype)
             ctx = batch["context_latents"].to(device, dtype=dtype)
             bsz = x0.shape[0]
+
+            if args.null_cond:
+                null_emb = getattr(model, "null_condition_emb", None)
+                if null_emb is None:
+                    sys.exit("--null-cond: model has no null_condition_emb")
+                ehs = null_emb.to(device, dtype=dtype).expand_as(ehs)
 
             # Deterministic noise per batch index (identical across cells)
             g = torch.Generator(device="cpu").manual_seed(args.seed * 100003 + bi)

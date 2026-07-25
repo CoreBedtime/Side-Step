@@ -128,8 +128,9 @@ def main() -> int:
     ap.add_argument("--manifest", required=True,
                     help="CSV: source_path,cover_path,scale (no header)")
     ap.add_argument("--sr", type=int, default=24000)
-    ap.add_argument("--latent-rate", type=float, default=14.3,
-                    help="DiT latent frame rate in Hz (signature band)")
+    ap.add_argument("--latent-rate", type=float, default=25.0,
+                    help="DiT latent frame rate in Hz (signature band). "
+                         "ACE-Step 1.5: 25 fps (250 frames per 10 s)")
     args = ap.parse_args()
 
     rows = [r for r in csv.reader(open(args.manifest, encoding="utf-8")) if r]
