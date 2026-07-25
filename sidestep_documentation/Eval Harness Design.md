@@ -47,6 +47,17 @@ is the checkpoint. Harness *labels* the knee (advisory badge); never acts.
   adherence. Pin pooled layer range in the manifest for comparability.
 - Division of labor: CLAP = adherence (+fallback for all), MERT = style +
   memorization when installed. Later plugin slots: FAD, aesthetics.
+- **Scorers are keyed by LoRA PURPOSE, not one-size-fits-all.** CLAP/MERT
+  are semantic embeddings trained to be INVARIANT to low-level texture —
+  near-blind to texture/corruption LoRAs. Purpose `texture` uses
+  reference-based metrics instead (paired covers make a ground truth exist:
+  mrstft distance, HF/flatness deltas, latent-rate modulation energy,
+  envelope-correlation for arrangement invariance, dose-response
+  monotonicity over adapter scale). Prototyped in
+  `scripts/eval_texture_pairs.py` + `scripts/eval_texture_discrimination.py`
+  (2x2 adapter-on/off x artifact/clean loss differential). Also add an
+  **external-judge hook** (user command: WAV paths in, scores out) so power
+  users can plug in their own downstream models as metrics.
 - Cheap bonus metric: librosa BPM of generated audio vs. caption BPM.
 - One-time dataset embedding pass cached beside the tensors.
 
