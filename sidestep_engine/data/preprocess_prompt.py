@@ -66,6 +66,18 @@ def build_simple_prompt(
     ks = meta.get("keyscale", "N/A") or "N/A"
     dur = meta.get("duration", 0)
 
+    # Inference renders duration as int(duration) ("187 seconds", upstream
+    # _dict_to_meta_string); raw float durations from audio probing
+    # ("187.43665 seconds") are a different token sequence with per-sample
+    # float noise. Match inference. Same for whole-valued float bpm from
+    # audio analysis ("128.0" -> "128").
+    try:
+        dur = int(float(dur))
+    except (TypeError, ValueError):
+        dur = 30
+    if isinstance(bpm, float) and bpm.is_integer():
+        bpm = int(bpm)
+
     metas_str = (
         f"- bpm: {bpm}\n"
         f"- timesignature: {ts}\n"
