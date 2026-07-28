@@ -52,7 +52,7 @@ def sample_latents(
     *,
     infer_steps: int = 50,
     shift: float = 1.0,
-    guidance_scale: float = 7.0,
+    guidance_scale: float = 1.0,
     cfg_interval: Tuple[float, float] = (0.0, 1.0),
     seed: int = 0,
     device: torch.device,
@@ -69,7 +69,10 @@ def sample_latents(
         infer_steps / shift: schedule params (base/sft: 50 / 1.0;
             turbo: 8 / 3.0).
         guidance_scale: APG guidance strength; <= 1.0 disables CFG
-            entirely (single forward per step).
+            entirely (single forward per step).  Default 1.0 — the REAL
+            inference default for all models (acestep.cpp: "0 = auto
+            (1.0 for all models)"); the modeling file's 7.0 signature
+            default is not what production uses.
         cfg_interval: apply guidance only when ``start <= t <= end``
             (official ``cfg_interval_start/end``); conditional prediction
             is used outside.

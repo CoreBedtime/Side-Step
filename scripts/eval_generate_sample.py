@@ -29,11 +29,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--checkpoint-dir", required=True)
     ap.add_argument("--model", default="base", dest="variant")
-    ap.add_argument("--sample", required=True, help="Path to a preprocessed .pt sample")
+    ap.add_argument("--sample", default=None, help="Path to a preprocessed .pt sample")
+    ap.add_argument("--prompt", default=None,
+                    help="Text prompt (bypasses --sample; encodes fresh conditioning)")
+    ap.add_argument("--lyrics", default="[Instrumental]")
     ap.add_argument("--adapter", default=None, help="Optional PEFT adapter dir")
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--shift", type=float, default=1.0)
-    ap.add_argument("--guidance", type=float, default=7.0)
+    ap.add_argument("--guidance", type=float, default=1.0,
+                    help="APG guidance; 1.0 = real inference default (no CFG)")
     ap.add_argument("--frames", type=int, default=750, help="Latent frames (750 = 30 s)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", default="auto")
@@ -53,15 +57,31 @@ def main() -> int:
     device = torch.device(gpu.device)
     dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(gpu.precision, torch.float32)
 
-    cond = load_conditioning(args.sample, max_frames=args.frames)
-    print(f"[probe] sample: {cond['name']}", file=sys.stderr)
-    print(f"[probe] caption: {cond['caption'][:120]}", file=sys.stderr)
+    if not args.sample and not args.prompt:
+        sys.exit("provide --sample or --prompt")
 
+    # Prompt mode needs the DiT encoder on-device; sample mode does not.
     print(f"[probe] loading model ({args.variant}, {device}/{gpu.precision})", file=sys.stderr)
     model = load_decoder_for_training(
         args.checkpoint_dir, args.variant,
-        device=str(device), precision=gpu.precision, offload_encoder=True,
+        device=str(device), precision=gpu.precision,
+        offload_encoder=not args.prompt,
     )
+
+    if args.prompt:
+        from sidestep_engine.eval.generator import build_conditioning_from_prompt
+        cond = build_conditioning_from_prompt(
+            model, args.checkpoint_dir,
+            prompt=args.prompt, lyrics=args.lyrics, frames=args.frames,
+            variant=args.variant, device=device, dtype=dtype,
+        )
+    else:
+        cond = load_conditioning(args.sample, max_frames=args.frames)
+    print(f"[probe] sample: {cond['name']}", file=sys.stderr)
+    print(f"[probe] caption: {cond['caption'][:120]}", file=sys.stderr)
+    if not args.prompt and (not cond["caption"] or len(cond["caption"].split()) < 3):
+        print("[probe] WARNING: caption looks empty/filename-like — expect noise; "
+              "use --prompt for a real test", file=sys.stderr)
     if args.adapter:
         from peft import PeftModel
         model.decoder = PeftModel.from_pretrained(model.decoder, args.adapter, is_trainable=False)

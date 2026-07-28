@@ -491,9 +491,15 @@ def _pass1_light(
                 # Build CAPTION text prompt (always encoded)
                 caption_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=False)
 
+                # Lyrics must be TEMPLATED like real inference does
+                # (handler _format_lyrics); raw lyrics are a different token
+                # sequence than the model sees at generation time.
+                _lang = sm.get("language") or sm.get("vocal_language") or "unknown"
+                lyrics_formatted = f"# Languages\n{_lang}\n\n# Lyric\n{lyrics}<|endoftext|>"
+
                 with torch.no_grad():
                     text_hs, text_mask = encode_text(text_enc, tokenizer, caption_prompt, device, dtype)
-                    lyric_hs, lyric_mask = encode_lyrics(text_enc, tokenizer, lyrics, device, dtype)
+                    lyric_hs, lyric_mask = encode_lyrics(text_enc, tokenizer, lyrics_formatted, device, dtype)
 
                 # Validate caption text encoder outputs
                 _bad_tensor = None
@@ -657,6 +663,13 @@ def _pass2_heavy(
                 silence_latent = data["silence_latent"].to(model_device, dtype=model_dtype)
                 latent_length = data["latent_length"]
 
+                # Timbre fallback: real inference conditions on a single
+                # SILENCE-LATENT frame when no reference audio is given
+                # (cpp Encode-Timbre + python handler); zeros are
+                # out-of-distribution for the encoder.
+                _sl3 = silence_latent if silence_latent.dim() == 3 else silence_latent.unsqueeze(0)
+                _timbre = _sl3[:, :1, :].to(model_dtype)
+
                 # --- Caption variant (always encoded) --------------------------
                 encoder_hs, encoder_mask = run_encoder(
                     model,
@@ -666,6 +679,7 @@ def _pass2_heavy(
                     lyric_attention_mask=lyric_mask,
                     device=str(model_device),
                     dtype=model_dtype,
+                    refer_audio_hidden_states_packed=_timbre,
                 )
 
                 # Free caption text inputs (lyrics are reused for genre variant)
@@ -686,6 +700,7 @@ def _pass2_heavy(
                         lyric_attention_mask=lyric_mask,
                         device=str(model_device),
                         dtype=model_dtype,
+                        refer_audio_hidden_states_packed=_timbre,
                     )
                     del genre_text_hs, genre_text_mask
 
