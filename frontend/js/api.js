@@ -190,7 +190,7 @@ const API = (() => {
     return _post('/api/audio-analyze/one', {
       path,
       device: o.device || 'auto',
-      mode: o.mode || 'mid',
+      mode: o.mode || 'standard',
       chunks: o.chunks || 5,
     }, 120000);
   }

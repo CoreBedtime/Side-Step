@@ -45,8 +45,9 @@ rich>=13.0.0
 # ── Adapters / optimizers (optional: lycoris, optimizers) ─────
 # lycoris-lora, bitsandbytes, prodigyopt
 
-# ── Demucs stems (optional: audio_analyze); librosa is core ──
-# demucs>=4.0.0
+# ── Offline analysis (optional: audio_analyze); librosa is core ──
+# beat-this>=1.1.0   -- tempo + time signature (default `standard` mode)
+# demucs>=4.0.0      -- stem separation, only for `sas` key detection
 librosa>=0.10.0
 
 # ── GUI (optional extra: gui) + native window (extra: native) ──

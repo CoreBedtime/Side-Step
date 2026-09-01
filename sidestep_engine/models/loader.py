@@ -188,11 +188,17 @@ def load_decoder_for_training(
         precision: 'bf16', 'fp16', or 'fp32'.
         weight_quantize: If True, apply optimum-quanto weight quantization (needs ``side-step[quantize]``).
         weight_qtype: optimum-quanto qtype name (e.g. ``qfloat8``, ``qint8``). TorchAO-only keys are rejected.
-        offload_encoder: If True, stream non-decoder components (encoders,
-            VAE) straight to CPU during ``from_pretrained`` instead of
-            loading them onto the GPU and offloading afterwards.  Avoids a
-            multi-GB load-time VRAM spike on small cards; the trainer's
-            later offload pass becomes a no-op for these components.
+        offload_encoder: If True, move all non-decoder top-level
+            components (condition encoder, tokenizer, detokenizer, ...) to
+            CPU immediately after loading, before returning.  Cuts
+            steady-state VRAM to roughly the decoder's footprint (measured
+            ~3.0 GB vs ~4.5 GB full model for v1.5-sft in bf16).  Note the
+            weights still transit the GPU during ``from_pretrained``, so
+            peak load VRAM is unchanged; a ``device_map``-based CPU
+            streaming approach was tried and showed the identical peak
+            while leaving the offloaded modules as unusable meta-device
+            stubs, so it was dropped.  The trainer's later offload pass
+            becomes a counted no-op for these components.
 
     Returns:
         The loaded ``AceStepConditionGenerationModel`` instance.
@@ -255,44 +261,14 @@ def load_decoder_for_training(
     # encoder/tokenizer/detokenizer use a separate encoder config.
     device_map = {"": device}
 
-    # When the trainer will offload non-decoder components anyway, stream
-    # them straight to CPU instead of spiking VRAM with encoder weights that
-    # get evicted moments later (multi-GB peak on 8 GB cards).  Skipped
-    # under weight quantization, which expects the whole model on-device.
-    if offload_encoder and not weight_quantize and str(device) != "cpu":
-        from sidestep_engine.core.constants import NON_DECODER_COMPONENTS
-        device_map_offload = {"": device}
-        for _name in NON_DECODER_COMPONENTS:
-            device_map_offload[_name] = "cpu"
-        device_map_candidates = [device_map_offload, device_map]
-    else:
-        device_map_candidates = [device_map]
-
     def _try_load(attn_impl: str) -> Any:
-        """Load with the offload-aware device_map, falling back to the plain
-        one if accelerate rejects the component names (e.g. a checkpoint
-        whose top-level modules differ from NON_DECODER_COMPONENTS)."""
-        last: Optional[Exception] = None
-        for dm in device_map_candidates:
-            try:
-                return AutoModel.from_pretrained(
-                    str(model_dir),
-                    trust_remote_code=True,
-                    attn_implementation=attn_impl,
-                    torch_dtype=dtype,
-                    device_map=dm,
-                )
-            except ValueError as exc:
-                # accelerate raises ValueError on unresolvable device_map
-                # entries; retry with the plain map before giving up.
-                last = exc
-                if dm is device_map_candidates[-1]:
-                    raise
-                logger.warning(
-                    "[Side-Step] CPU-offload device_map rejected (%s) -- "
-                    "falling back to full-device load", exc,
-                )
-        raise last  # unreachable; keeps type checkers happy
+        return AutoModel.from_pretrained(
+            str(model_dir),
+            trust_remote_code=True,
+            attn_implementation=attn_impl,
+            torch_dtype=dtype,
+            device_map=device_map,
+        )
 
     for idx, attn_impl in enumerate(attn_candidates):
         try:
@@ -349,6 +325,21 @@ def load_decoder_for_training(
     # Freeze everything by default -- trainer will unfreeze LoRA params
     for param in model.parameters():
         param.requires_grad = False
+
+    # Evict non-decoder components (condition encoder, tokenizer,
+    # detokenizer, ...) to CPU right away so they don't sit in VRAM for
+    # the whole run.  Skipped under weight quantization, which expects
+    # the whole model on-device.
+    if offload_encoder and not weight_quantize and str(device) != "cpu":
+        from sidestep_engine.core.trainer_helpers import offload_non_decoder
+
+        n_offloaded = offload_non_decoder(model)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info(
+            "[OK] Offloaded %d non-decoder components to CPU at load time",
+            n_offloaded,
+        )
 
     logger.info("[OK] Model on %s (%s), all params frozen", device, dtype)
     if weight_quantize:

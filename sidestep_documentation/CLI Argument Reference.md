@@ -286,8 +286,13 @@ Extract BPM, key, and time signature from audio files. Uses Demucs stem separati
 | `--input` | `-i` | str | **(required)** | Directory containing audio files (scanned recursively) |
 | `--device` | | str | `auto` | Device: `auto`, `cuda`, `cpu` |
 | `--policy` | | str | `fill_missing` | Merge policy: `fill_missing` (only fill empty fields), `overwrite_all` |
-| `--mode` | | str | `mid` | Analysis quality: `faf` (fast, no Demucs), `mid` (default, ensemble), `sas` (deep multi-technique) |
-| `--chunks` | | int | `5` | Number of analysis chunks for `sas` mode |
+| `--mode` | | str | `standard` | Analysis quality: `standard` (default — tempo + time signature, ~1 s/file), `sas` (adds Demucs-separated key, ~20–30 s/file). Legacy `faf` and `mid` are accepted and map to `standard` |
+| `--tempo-centre` | `--tempo-center` | float | `130` | Centre of the log-normal tempo prior, in BPM. The prior resolves half-tempo tracking; lower it for libraries of predominantly slow material, where the default would wrongly double a genuine slow tempo |
+| `--chunks` | | int | `5` | Number of analysis chunks for `sas` key detection |
+
+> **Note:** `standard` does not produce a `key` — that is what makes it fast. Use
+> `--mode sas` when you need one. `mid` previously produced a key and now maps to
+> `standard`, so pipelines relying on that must switch to `sas` explicitly.
 
 ---
 

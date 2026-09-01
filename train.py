@@ -620,7 +620,9 @@ def _run_build_dataset(args) -> int:
 def _run_audio_analyze(args) -> int:
     """Run local offline audio analysis (BPM, key, time signature) on audio files."""
     from pathlib import Path
-    from sidestep_engine.analysis.audio_analysis import analyze_audio
+    from sidestep_engine.analysis.audio_analysis import (
+        analysis_fields_for, analyze_audio, normalize_mode, unload_models,
+    )
     from sidestep_engine.data.sidecar_io import (
         merge_fields, read_sidecar, sidecar_path_for, write_sidecar,
     )
@@ -640,8 +642,9 @@ def _run_audio_analyze(args) -> int:
 
     device = getattr(args, "device", "auto")
     policy = getattr(args, "policy", "fill_missing")
-    mode = getattr(args, "mode", "mid")
+    mode = normalize_mode(getattr(args, "mode", "standard"))
     n_chunks = getattr(args, "chunks", 5)
+    tempo_centre = getattr(args, "tempo_centre", None)
 
     print("\n" + "=" * 60)
     print("  Audio Analysis (local offline)")
@@ -651,50 +654,68 @@ def _run_audio_analyze(args) -> int:
     print(f"  Device:      {device}")
     print(f"  Mode:        {mode}")
     print(f"  Policy:      {policy}")
+    if tempo_centre is not None:
+        print(f"  Tempo prior: {tempo_centre:.0f} BPM")
     if mode == "sas":
         print(f"  Chunks:      {n_chunks}")
     print("=" * 60)
-    _pipelines = {"faf": "librosa direct (no Demucs)", "mid": "Demucs + librosa ensemble", "sas": "Demucs + deep multi-technique"}
+    _pipelines = {
+        "standard": "Beat This! tempo + time signature",
+        "sas": "Beat This! + Demucs-separated key",
+    }
     print(f"[INFO] Pipeline: {_pipelines.get(mode, mode)}")
 
     written = 0
     skipped = 0
     failed = 0
 
-    for i, af in enumerate(audio_files, 1):
-        label = af.relative_to(input_dir) if af.is_relative_to(input_dir) else af.name
-        try:
-            result = analyze_audio(af, device=device, mode=mode, n_chunks=n_chunks)
-            # Strip confidence (GUI-only, not for sidecars)
-            confidence = result.pop("confidence", {})
-            if not result:
-                skipped += 1
-                print(f"  [{i}/{len(audio_files)}] {label} -- skipped (no results)")
-                continue
+    # Fields this mode can actually produce -- waiting on a key that
+    # `standard` never emits would re-analyse every file on every run.
+    expected_fields = analysis_fields_for(mode)
 
-            sc_path = sidecar_path_for(af)
-            existing = read_sidecar(sc_path)
+    try:
+        for i, af in enumerate(audio_files, 1):
+            label = af.relative_to(input_dir) if af.is_relative_to(input_dir) else af.name
+            try:
+                sc_path = sidecar_path_for(af)
+                existing = read_sidecar(sc_path)
 
-            if policy == "fill_missing":
-                # Skip if all analysis fields already populated
-                if all(existing.get(k, "").strip() for k in ("bpm", "key", "signature")):
+                # Decide *before* analysing: the check used to run after, so
+                # re-runs paid the full cost and then discarded the result.
+                if policy == "fill_missing" and all(
+                    existing.get(k, "").strip() for k in expected_fields
+                ):
                     skipped += 1
                     print(f"  [{i}/{len(audio_files)}] {label} -- skipped (already populated)")
                     continue
 
-            merged = merge_fields(existing, result, policy=policy)
-            write_sidecar(sc_path, merged)
-            written += 1
-            parts = ", ".join(f"{k}={v}" for k, v in result.items())
-            conf_parts = ", ".join(f"{k}={v}" for k, v in confidence.items())
-            print(f"  [{i}/{len(audio_files)}] {label} -- written ({parts}) [{conf_parts}]")
+                result = analyze_audio(
+                    af, device=device, mode=mode, n_chunks=n_chunks,
+                    tempo_centre=tempo_centre,
+                )
+                # Strip confidence (GUI-only, not for sidecars)
+                confidence = result.pop("confidence", {})
+                if not result:
+                    skipped += 1
+                    print(f"  [{i}/{len(audio_files)}] {label} -- skipped (no results)")
+                    continue
 
-        except Exception as exc:
-            failed += 1
-            print(f"  [{i}/{len(audio_files)}] {label} -- FAILED: {exc}")
-            logger.exception("Audio analysis failed for %s", af)
-        finally:
-            _cleanup_gpu()
+                merged = merge_fields(existing, result, policy=policy)
+                write_sidecar(sc_path, merged)
+                written += 1
+                parts = ", ".join(f"{k}={v}" for k, v in result.items())
+                conf_parts = ", ".join(f"{k}={v}" for k, v in confidence.items())
+                print(f"  [{i}/{len(audio_files)}] {label} -- written ({parts}) [{conf_parts}]")
+
+            except Exception as exc:
+                failed += 1
+                print(f"  [{i}/{len(audio_files)}] {label} -- FAILED: {exc}")
+                logger.exception("Audio analysis failed for %s", af)
+    finally:
+        # Models are cached across the batch; release once at the end
+        # rather than emptying the allocator after every file.
+        unload_models()
+        _cleanup_gpu()
 
     print(f"\n[OK] Audio analysis complete: {written} written, {skipped} skipped, {failed} failed")
     return 0

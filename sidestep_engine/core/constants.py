@@ -9,15 +9,11 @@ from __future__ import annotations
 import sys
 from typing import Dict, FrozenSet
 
-# Top-level model components that are NOT needed on the GPU during
-# training (preprocessing already produced all conditioning tensors).
-# Used by trainer_helpers.offload_non_decoder (post-load offload) and by
-# models/loader (to stream these straight to CPU at load time so encoder
-# weights never spike VRAM on small cards).
-NON_DECODER_COMPONENTS: tuple = (
-    "music_encoder", "lyric_encoder", "timbre_encoder",
-    "condition_projection", "vae", "text_encoder", "attention_pooler",
-)
+# NOTE: encoder-offload no longer uses a hardcoded component name list.
+# Earlier versions kept a NON_DECODER_COMPONENTS tuple here with ACE-Step
+# 1.0-era names (music_encoder, vae, ...) that silently matched nothing on
+# v1.5 checkpoints; trainer_helpers.offload_non_decoder now walks the live
+# model's ``named_children()`` and offloads everything except ``decoder``.
 
 # ---------------------------------------------------------------------------
 # Model variant → checkpoint subdirectory mapping

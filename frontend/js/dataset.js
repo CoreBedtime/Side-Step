@@ -1343,9 +1343,9 @@ const Dataset = (() => {
       const status = $('sidecar-analyze-status');
       btn.disabled = true;
       btn.textContent = '[...]';
-      const mode = $('analyze-mode')?.value || 'mid';
+      const mode = $('analyze-mode')?.value || 'standard';
       const chunks = parseInt($('analyze-chunks')?.value || '5', 10);
-      const modeLabels = { faf: 'F-A-F (fast)', mid: 'Mid (ensemble)', sas: 'S-A-S (deep)' };
+      const modeLabels = { standard: 'Standard', sas: 'S-A-S (with key)' };
       if (status) { status.style.display = 'inline'; status.textContent = 'Running ' + (modeLabels[mode] || mode) + '...'; status.style.color = 'var(--muted)'; }
 
       try {

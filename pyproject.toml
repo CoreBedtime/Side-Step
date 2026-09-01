@@ -63,8 +63,12 @@ captions = [
     "openai>=1.54.0",
     "qwen-omni-utils>=0.0.6",
 ]
-# Stem separation for offline BPM/key/ts analysis (sidestep audio-analyze)
+# Offline BPM / time-signature / key analysis (sidestep audio-analyze).
+# beat-this drives the default `standard` mode; demucs is only needed for
+# `sas` key detection. Runs without madmom -- the tracker's whole point is
+# that it needs no DBN postprocessing.
 audio_analyze = [
+    "beat-this>=1.1.0",
     "demucs>=4.0.0",
 ]
 # LoKR / LoHA (not needed for plain LoRA / DoRA / OFT)

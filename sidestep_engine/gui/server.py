@@ -9,6 +9,7 @@ telemetry.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -41,6 +42,22 @@ def _resolve_server_path(path: str) -> Path:
     """
     from sidestep_engine.gui.file_ops import _resolve_gui_path
     return _resolve_gui_path(path or "")
+
+
+async def _offload(fn, *args, **kwargs):
+    """Run a blocking filesystem call off the event loop.
+
+    Use this for any handler whose cost scales with the dataset: a
+    ~900-file library already takes ~2 s to scan, and a mix copies every
+    audio file. Called in-thread, that stalls *every* other request for
+    the duration -- training progress, GPU telemetry, SSE events -- not
+    just the one being served.
+
+    Cheap fixed-cost reads (a single small JSON) do not need this; the
+    thread hop would cost more than the read.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -474,12 +491,13 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
     @app.get("/api/dataset/scan")
     async def scan_audio(path: str = ""):
         from sidestep_engine.gui.file_ops import scan_audio_dir
-        return JSONResponse(scan_audio_dir(path))
+        return JSONResponse(await _offload(scan_audio_dir, path))
 
     @app.post("/api/dataset/mix")
     async def create_mix_dataset(body: MixDatasetRequest):
         from sidestep_engine.gui.file_ops import create_mix_dataset
-        return JSONResponse(create_mix_dataset(
+        return JSONResponse(await _offload(
+            create_mix_dataset,
             source_root=body.source_root,
             destination_root=body.destination_root,
             mix_name=body.mix_name,
@@ -598,7 +616,7 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
     @app.get("/api/checkpoints/{run_name}")
     async def list_checkpoints(run_name: str):
         from sidestep_engine.gui.file_ops import list_checkpoints
-        return JSONResponse({"checkpoints": list_checkpoints(run_name)})
+        return JSONResponse({"checkpoints": await _offload(list_checkpoints, run_name)})
 
     # ======================================================================
     # API key validation
@@ -765,7 +783,7 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
 
         audio_path = str(body.get("path") or "").strip()
         device = str(body.get("device") or "auto")
-        mode = str(body.get("mode") or "mid")
+        mode = str(body.get("mode") or "standard")
         n_chunks = int(body.get("chunks") or 5)
         if not audio_path:
             return JSONResponse({"error": "No audio path specified"}, status_code=400)

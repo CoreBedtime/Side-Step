@@ -24,6 +24,13 @@ package-lock.json
 
 # Per-project UI prefs (written at runtime)
 .sidestep/
+.claude/
+.cursor/
+
+# Local inference/evaluation diagnostics
+/decode_real_check.wav
+/diag_*.wav
+/eval_sample_*.wav
 
 # Runtime progress/session artifacts
 **/.progress.jsonl

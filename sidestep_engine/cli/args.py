@@ -464,13 +464,26 @@ def _add_audio_analyze_args(parser: argparse.ArgumentParser) -> None:
         help="Merge policy for existing sidecar fields (default: fill_missing)",
     )
     g.add_argument(
-        "--mode", type=str, default="mid",
-        choices=["faf", "mid", "sas"],
-        help="Analysis quality: faf (fast, no Demucs), mid (default, ensemble), sas (deep multi-technique)",
+        "--mode", type=str, default="standard",
+        choices=["standard", "sas", "faf", "mid"],
+        help=(
+            "Analysis quality: standard (default, tempo + time signature, ~1s), "
+            "sas (adds Demucs-separated key, ~20-30s). 'faf' and 'mid' are "
+            "accepted for backwards compatibility and map to standard"
+        ),
+    )
+    g.add_argument(
+        "--tempo-centre", "--tempo-center", type=float, default=None,
+        dest="tempo_centre",
+        help=(
+            "Centre of the tempo prior in BPM (default: 130). Lower it for "
+            "libraries of predominantly slow material, where the default "
+            "would wrongly double a genuine slow tempo"
+        ),
     )
     g.add_argument(
         "--chunks", type=int, default=5,
-        help="Number of analysis chunks for sas mode (default: 5)",
+        help="Number of analysis chunks for sas key detection (default: 5)",
     )
 
 

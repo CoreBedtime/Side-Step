@@ -608,7 +608,7 @@ const WorkspaceLab = (() => {
       const config = {
         device: $("analyze-device")?.value || "auto",
         policy: $("analyze-policy")?.value || "fill_missing",
-        mode: $("analyze-mode")?.value || "mid",
+        mode: $("analyze-mode")?.value || "standard",
         chunks: parseInt($("analyze-chunks")?.value || "5", 10),
         dataset_dir: $("lab-dataset-path")?.value,
       };

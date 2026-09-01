@@ -146,18 +146,34 @@ def force_disable_decoder_cache(decoder: nn.Module) -> bool:
 
 
 def offload_non_decoder(model: nn.Module) -> int:
-    """Move encoder/VAE/non-decoder submodules to CPU. Returns count offloaded.
+    """Move every top-level submodule except the decoder to CPU.
 
-    No-op (but still counted) for components the loader already streamed
-    to CPU at load time via its device_map.
+    Submodules are discovered via ``named_children()`` rather than a
+    hardcoded name list, so this works across checkpoint generations whose
+    component names differ (e.g. v1.5 models expose ``encoder`` /
+    ``tokenizer`` / ``detokenizer``, not ``music_encoder`` / ``vae``).
+    Modules containing trainable (adapter) parameters are never offloaded.
+
+    Returns the number of components moved; components the loader already
+    streamed to CPU at load time via its device_map still count.
     """
-    from sidestep_engine.core.constants import NON_DECODER_COMPONENTS
     count = 0
-    for name in NON_DECODER_COMPONENTS:
-        sub = getattr(model, name, None)
-        if sub is not None and isinstance(sub, nn.Module):
-            sub.to("cpu")
+    for name, sub in model.named_children():
+        if name == "decoder":
+            continue
+        params = list(sub.parameters())
+        if any(p.requires_grad for p in params):
+            logger.warning(
+                "[WARN] Not offloading %r: contains trainable parameters", name
+            )
+            continue
+        if any(p.device.type == "meta" for p in params):
+            # Already offloaded via accelerate hooks (weights live in the
+            # hook's CPU weights map); ``.to()`` raises on meta tensors.
             count += 1
+            continue
+        sub.to("cpu")
+        count += 1
     return count
 
 

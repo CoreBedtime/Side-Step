@@ -1138,7 +1138,9 @@ class TaskManager:
 
         def _run():
             try:
-                from sidestep_engine.analysis.audio_analysis import analyze_audio
+                from sidestep_engine.analysis.audio_analysis import (
+                    analysis_fields_for, analyze_audio, unload_models,
+                )
                 from sidestep_engine.data.preprocess_discovery import AUDIO_EXTENSIONS
                 from sidestep_engine.data.sidecar_io import (
                     merge_fields, read_sidecar, sidecar_path_for, write_sidecar,
@@ -1175,9 +1177,12 @@ class TaskManager:
 
                 device = str(config.get("device") or "auto")
                 policy = str(config.get("policy") or "fill_missing")
-                mode = str(config.get("mode") or "mid")
+                mode = str(config.get("mode") or "standard")
                 n_chunks = int(config.get("chunks") or 5)
                 stats = {"written": 0, "skipped": 0, "failed": 0}
+                # Fields this mode can produce -- waiting on a key that
+                # `standard` never emits would re-analyse every file.
+                expected_fields = analysis_fields_for(mode)
 
                 for i, af in enumerate(audio_files, 1):
                     if task.cancel_flag.is_set():
@@ -1186,6 +1191,20 @@ class TaskManager:
                         return
 
                     try:
+                        sc_path = sidecar_path_for(af)
+                        existing = read_sidecar(sc_path)
+
+                        # Decide *before* analysing: this check used to run
+                        # after, so re-runs paid full cost then discarded it.
+                        if policy == "fill_missing" and all(
+                            existing.get(k, "").strip() for k in expected_fields
+                        ):
+                            stats["skipped"] += 1
+                            _push(task, i, total,
+                                  f"{af.name}: skipped (already populated)",
+                                  **stats)
+                            continue
+
                         result = analyze_audio(af, device=device, mode=mode, n_chunks=n_chunks)
                         # Strip confidence (GUI-only, not for sidecars)
                         sidecar_fields = {
@@ -1197,18 +1216,6 @@ class TaskManager:
                             _push(task, i, total, f"{af.name}: skipped (no results)",
                                   **stats)
                             continue
-
-                        sc_path = sidecar_path_for(af)
-                        existing = read_sidecar(sc_path)
-
-                        if policy == "fill_missing":
-                            if all(existing.get(k, "").strip()
-                                   for k in ("bpm", "key", "signature")):
-                                stats["skipped"] += 1
-                                _push(task, i, total,
-                                      f"{af.name}: skipped (already populated)",
-                                      **stats)
-                                continue
 
                         merged = merge_fields(existing, sidecar_fields, policy=policy)
                         write_sidecar(sc_path, merged)
@@ -1234,6 +1241,13 @@ class TaskManager:
                 logger.exception("Audio analysis failed")
                 task.status = "failed"
                 _push_event(task, "fail", str(exc))
+            finally:
+                # The beat tracker is cached across the batch; free its VRAM
+                # once the run ends (including on cancel or failure).
+                try:
+                    unload_models()
+                except Exception:
+                    pass
 
         task.thread = threading.Thread(target=_run, daemon=True)
         with self._lock:
