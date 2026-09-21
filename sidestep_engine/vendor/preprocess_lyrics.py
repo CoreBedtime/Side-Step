@@ -2,13 +2,15 @@
 
 import torch
 
+MAX_LYRIC_TOKENS = 2048
+
 
 def encode_lyrics(text_encoder, text_tokenizer, lyrics: str, device, dtype):
     """Encode lyrics into hidden states."""
     lyric_inputs = text_tokenizer(
         lyrics,
-        padding="max_length",
-        max_length=512,
+        padding=False,
+        max_length=MAX_LYRIC_TOKENS,
         truncation=True,
         return_tensors="pt",
     )
